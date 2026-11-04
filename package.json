@@ -1,0 +1,9 @@
+{
+  "name": "sticky-character-studio",
+  "version": "1.0.0",
+  "description": "Local YouTube Animation & Lip-Sync Studio for Sticky Hoodie Character",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

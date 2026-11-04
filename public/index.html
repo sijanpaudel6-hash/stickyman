@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sticky Character Studio — Local YouTube Animator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Top Header Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">
+        <div class="brand-eyes"><span></span><span></span></div>
+      </div>
+      <span>Sticky Character Studio</span>
+      <span class="badge">Local YouTube Engine</span>
+    </div>
+
+    <div class="topbar-actions">
+      <input type="file" id="audioFileInput" accept="audio/*" style="display:none" />
+      <button class="btn btn-primary" id="btnUploadAudio" title="Upload your MP3/WAV voiceover">
+        🎵 Upload Voiceover (MP3/WAV)
+      </button>
+
+      <input type="file" id="bgFileInput" accept="image/*,video/*" style="display:none" />
+      <button class="btn" id="btnUploadBg" title="Upload custom background image or video">
+        🖼️ Upload Background
+      </button>
+
+      <button class="btn" id="btnMicToggle" title="Use live microphone for testing or live recording">
+        🎙️ Live Mic: OFF
+      </button>
+
+      <button class="btn btn-success" id="btnExportMp4" title="Render & Export 1080p MP4 Video via FFmpeg">
+        🎬 Export Video (MP4)
+      </button>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Studio Workspace -->
+  <main class="workspace">
+
+    <!-- Left Panel: Scene List & Storyboard -->
+    <aside class="panel">
+      <div class="panel-header">
+        <span>📋 Scene List (Storyboard)</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" id="btnAddScene" title="Add new scene at end">+ Scene</button>
+          <button class="btn btn-sm btn-danger" id="btnDeleteScene" title="Delete selected scene">🗑</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div style="background:#0f131c;border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:11.5px;color:#cbd5e1;line-height:1.45">
+          <div style="font-weight:700;color:#fff;margin-bottom:3px">🔊 Active Voiceover Track:</div>
+          <div id="audioFileLabel" style="color:#a5b4fc;word-break:break-all">Built-in Demo Voiceover (16.0s)</div>
+          <div style="margin-top:6px;color:var(--text-muted);font-size:11px">
+            Tip: Press <b>Space</b> to play, press <b>S</b> to split a scene at the playhead, or press <b>1–9 / 0</b> to switch emotions.
+          </div>
+        </div>
+
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#cbd5e1;cursor:pointer">
+          <input type="checkbox" id="autoSplitCheck" />
+          <span>Auto-split new scene when clicking Emotion while playing</span>
+        </label>
+
+        <div id="sceneListContainer" style="display:flex;flex-direction:column;gap:7px"></div>
+      </div>
+    </aside>
+
+    <!-- Center Stage: 16:9 YouTube Canvas + Transport Bar -->
+    <section class="center-stage">
+      <div class="canvas-viewport">
+        <div class="canvas-wrapper">
+          <canvas id="stageCanvas" width="1280" height="720"></canvas>
+          <div class="canvas-hud">
+            <div class="hud-pill">
+              <span id="hudSceneName">Scene 1 • NEUTRAL (front)</span>
+            </div>
+            <div class="hud-pill">
+              <span>Voice Lip-Sync</span>
+              <div class="mic-meter"><div class="mic-meter-fill" id="micMeterFill"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="transport-bar">
+        <div class="transport-left">
+          <button class="btn btn-primary" id="btnPlayPause">▶ Play</button>
+          <button class="btn" id="btnRestart" title="Jump to 0:00">⏮ Start</button>
+          <span class="time-readout" id="timeReadout">0:00.0 / 0:16.0</span>
+        </div>
+
+        <div class="transport-center">
+          <button class="btn" id="btnSplitScene" title="Split current scene at the red playhead (Shortcut: S)">
+            ✂️ Split Scene Here (S)
+          </button>
+        </div>
+
+        <div class="transport-right">
+          <span style="font-size:11.5px;color:var(--text-muted)">Face Engine:</span>
+          <select id="faceModeSelect" style="width:auto">
+            <option value="hybrid">Original Sheet Art + Lip-Sync</option>
+            <option value="procedural">Smooth Vector Glow</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Panel: Active Scene Inspector (Emotion, Pose, Background, Camera) -->
+    <aside class="panel panel-right">
+      <div class="panel-header">
+        <span>🎭 Scene Inspector</span>
+      </div>
+      <div class="panel-body">
+
+        <!-- Emotion Picker -->
+        <div>
+          <div class="section-label">
+            <span>Character Emotion</span>
+            <span style="font-size:10px;text-transform:none">Keys 1–9, 0</span>
+          </div>
+          <div class="emotion-grid" id="emotionGrid"></div>
+        </div>
+
+        <!-- Pose / Framing Picker -->
+        <div>
+          <div class="section-label">
+            <span>Character Pose / Shot</span>
+          </div>
+          <div class="pose-grid">
+            <button class="pose-btn active" data-pose="front">Full Front</button>
+            <button class="pose-btn" data-pose="bust">Close Bust</button>
+            <button class="pose-btn" data-pose="side">Side View</button>
+            <button class="pose-btn" data-pose="back">Back Hood</button>
+          </div>
+        </div>
+
+        <!-- Background Picker -->
+        <div>
+          <div class="section-label">
+            <span>Scene Background</span>
+            <button class="btn btn-sm" id="btnApplyBgAll" title="Use this background across every scene">Apply to All</button>
+          </div>
+          <div class="bg-grid" id="bgGrid"></div>
+        </div>
+
+        <!-- Motion, Camera & Transform -->
+        <div>
+          <div class="section-label"><span>Animation & Camera</span></div>
+
+          <div class="control-row">
+            <label style="width:85px">Body Action</label>
+            <select id="sceneMotionSelect">
+              <option value="talk_bounce">Talk Bounce & Breathe</option>
+              <option value="breathe">Calm Breathing Only</option>
+              <option value="walk">Walking Step Cycle</option>
+              <option value="shake">Tremble / Shiver</option>
+              <option value="float">Dreamy Float</option>
+              <option value="none">Static / Still</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label style="width:85px">Camera</label>
+            <select id="sceneCameraSelect">
+              <option value="static">Static Camera</option>
+              <option value="zoom_in">Slow Zoom In</option>
+              <option value="zoom_out">Slow Zoom Out</option>
+              <option value="pan_right">Slow Cinematic Pan</option>
+              <option value="handheld">Subtle Handheld Sway</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label style="width:85px">Atmosphere</label>
+            <select id="sceneAtmoSelect">
+              <option value="dust">Floating Dust Motes</option>
+              <option value="rain">Falling Rain Overlay</option>
+              <option value="none">Clean (Vignette Only)</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label style="width:85px">Size / Scale</label>
+            <input type="range" id="charScaleSlider" min="0.4" max="1.8" step="0.05" value="1.0" />
+            <span id="charScaleVal" style="width:38px;text-align:right;font-size:11.5px">100%</span>
+          </div>
+
+          <div class="control-row">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="charFlipCheck" />
+              <span>Flip Character Horizontally (Face Left/Right)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Scene Title & Subtitle / Caption -->
+        <div>
+          <div class="section-label"><span>Scene Label & Caption</span></div>
+          <div class="control-row">
+            <input type="text" id="sceneTitleInput" placeholder="Scene title..." />
+          </div>
+          <div class="control-row">
+            <input type="text" id="sceneSubtitleInput" placeholder="Optional on-screen subtitle / caption..." />
+          </div>
+        </div>
+
+      </div>
+    </aside>
+  </main>
+
+  <!-- Bottom Timeline & Audio Waveform Dock -->
+  <footer class="timeline-dock">
+    <div class="timeline-toolbar">
+      <div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:11.5px;color:var(--text-muted)">
+        <span>⏱️ VOICEOVER WAVEFORM & SCENE TIMELINE</span>
+        <span style="font-weight:400;color:#64748b">(Click waveform to scrub • Drag scene edges to resize • Drag character on canvas to move)</span>
+      </div>
+    </div>
+
+    <div class="timeline-tracks">
+      <canvas id="waveformCanvas"></canvas>
+      <div class="scenes-track" id="scenesTrack"></div>
+      <div class="playhead-line" id="playheadLine" style="left:0%">
+        <div class="playhead-cap"></div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Export Progress Modal -->
+  <div class="export-overlay" id="exportOverlay">
+    <div class="export-modal">
+      <h3 style="font-size:16px;margin-bottom:6px">🎬 Exporting YouTube MP4 Video</h3>
+      <p id="exportStatusText" style="color:var(--text-muted);font-size:12.5px">Rendering timeline...</p>
+      <div class="progress-bar">
+        <div class="progress-fill" id="exportProgressFill"></div>
+      </div>
+      <p style="font-size:11px;color:#64748b">Keep this tab visible while recording completes.</p>
+    </div>
+  </div>
+
+  <script src="assets_bundle.js"></script>
+  <script src="backgrounds.js"></script>
+  <script src="characterRenderer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+{
+  "poses": {
+    "front": {
+      "width": 160,
+      "height": 358,
+      "head": {
+        "cx": 80.5,
+        "cy": 53.5,
+        "rx": 32.5,
+        "ry": 35.5
+      }
+    },
+    "side": {
+      "width": 110,
+      "height": 358,
+      "head": {
+        "cx": 56.5,
+        "cy": 53.5,
+        "rx": 36.5,
+        "ry": 35.5
+      }
+    },
+    "back": {
+      "width": 160,
+      "height": 358,
+      "head": null
+    }
+  },
+  "busts": {
+    "neutral": {
+      "width": 175,
+      "height": 186,
+      "head": {
+        "cx": 86.5,
+        "cy": 76.0,
+        "rx": 63.5,
+        "ry": 68.0
+      }
+    },
+    "happy": {
+      "width": 175,
+      "height": 186,
+      "head": {
+        "cx": 87.0,
+        "cy": 75.5,
+        "rx": 64.0,
+        "ry": 68.5
+      }
+    },
+    "tired": {
+      "width": 175,
+      "height": 186,
+      "head": {
+        "cx": 87.0,
+        "cy": 76.0,
+        "rx": 63.0,
+        "ry": 68.0
+      }
+    },
+    "crying": {
+      "width": 175,
+      "height": 186,
+      "head": {
+        "cx": 87.5,
+        "cy": 76.0,
+        "rx": 63.5,
+        "ry": 68.0
+      }
+    }
+  }
+}
