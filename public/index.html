@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sticky Character Studio — Local YouTube Animator</title>
+  <title>Sticky Character Studio v2 — Rig & Viral Engine</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -15,7 +15,7 @@
         <div class="brand-eyes"><span></span><span></span></div>
       </div>
       <span>Sticky Character Studio</span>
-      <span class="badge">Local YouTube Engine</span>
+      <span class="badge">v2 · Rig + Viral Engine</span>
     </div>
 
     <div class="topbar-actions">
@@ -32,6 +32,10 @@
       <button class="btn" id="btnMicToggle" title="Use live microphone for testing or live recording">
         🎙️ Live Mic: OFF
       </button>
+
+      <input type="file" id="projectFileInput" accept=".json,application/json" style="display:none" />
+      <button class="btn" id="btnSaveProject" title="Save scenes, rig poses, FX & cards to a .json project file">💾 Save</button>
+      <button class="btn" id="btnLoadProject" title="Load a .json project file">📂 Load</button>
 
       <button class="btn btn-success" id="btnExportMp4" title="Render & Export 1080p MP4 Video via FFmpeg">
         🎬 Export Video (MP4)
@@ -131,7 +135,8 @@
             <span>Character Pose / Shot</span>
           </div>
           <div class="pose-grid">
-            <button class="pose-btn active" data-pose="front">Full Front</button>
+            <button class="pose-btn pose-btn-rig" data-pose="rig" title="Fully articulated skeletal rig: IK hands/feet, gestures, walk/run, props">🦴 Rigged Body (v2) — IK, Gestures, Walk/Run</button>
+            <button class="pose-btn" data-pose="front">Full Front</button>
             <button class="pose-btn" data-pose="bust">Close Bust</button>
             <button class="pose-btn" data-pose="side">Side View</button>
             <button class="pose-btn" data-pose="back">Back Hood</button>
@@ -185,7 +190,7 @@
 
           <div class="control-row">
             <label style="width:85px">Size / Scale</label>
-            <input type="range" id="charScaleSlider" min="0.4" max="1.8" step="0.05" value="1.0" />
+            <input type="range" id="charScaleSlider" min="0.4" max="3.0" step="0.05" value="1.0" />
             <span id="charScaleVal" style="width:38px;text-align:right;font-size:11.5px">100%</span>
           </div>
 
@@ -196,6 +201,157 @@
             </label>
           </div>
         </div>
+
+        <!-- ===================== v2: BODY RIG ===================== -->
+        <details class="insp-group" id="rigGroup" open>
+          <summary>🦴 Body Rig · Limbs & Locomotion</summary>
+          <div class="rig-disabled-hint" id="rigDisabledHint">
+            This scene uses a flat sprite pose. <button class="btn btn-sm btn-primary" id="btnSwitchToRig">Switch scene to 🦴 Rigged Body</button>
+          </div>
+          <div id="rigControls">
+            <div class="section-label"><span>Camera View / Head Turn</span></div>
+            <div class="chip-row" id="rigViewRow"></div>
+
+            <div class="section-label" style="margin-top:10px"><span>Action & Gesture Preset</span><span class="kbd-hint">G = gizmos</span></div>
+            <div class="gesture-grid" id="gestureGrid"></div>
+
+            <div class="control-row" style="margin-top:8px">
+              <label style="width:92px">Right hand</label>
+              <select id="handFrontSelect"></select>
+            </div>
+            <div class="control-row">
+              <label style="width:92px">Left hand</label>
+              <select id="handBackSelect"></select>
+            </div>
+
+            <div class="section-label" style="margin-top:8px"><span>Hand Prop</span></div>
+            <div class="prop-grid" id="propGrid"></div>
+
+            <div class="section-label" style="margin-top:10px"><span>Manual Pose (FK sliders)</span><button class="btn btn-sm" id="btnResetPose">Reset</button></div>
+            <div class="control-row">
+              <label style="width:92px">Spine lean</label>
+              <input type="range" id="rigLeanSlider" min="-25" max="25" step="1" value="0" />
+              <span class="val" id="rigLeanVal">0°</span>
+            </div>
+            <div class="control-row">
+              <label style="width:92px">Head tilt</label>
+              <input type="range" id="rigTiltSlider" min="-30" max="30" step="1" value="0" />
+              <span class="val" id="rigTiltVal">0°</span>
+            </div>
+            <div class="control-row">
+              <label style="width:92px">Head nod</label>
+              <input type="range" id="rigNodSlider" min="-25" max="25" step="1" value="0" />
+              <span class="val" id="rigNodVal">0°</span>
+            </div>
+
+            <div class="section-label" style="margin-top:8px"><span>Inverse Kinematics</span></div>
+            <label class="check-row">
+              <input type="checkbox" id="ikGizmoCheck" checked />
+              <span>Show IK gizmos — drag hands, feet & head on the canvas</span>
+            </label>
+            <div class="control-row" style="margin-top:4px">
+              <span id="ikPinsLabel" style="font-size:11.5px;color:var(--text-muted)">No IK pins on this scene</span>
+              <button class="btn btn-sm" id="btnClearIk">Clear IK Pins</button>
+            </div>
+            <div class="mini-hint">Double-click a pinned effector to release it. Shift-drag the body to move the whole character.</div>
+
+            <div class="section-label" style="margin-top:10px"><span>Walk / Run Locomotion</span><span class="speed-badge" id="speedBadge">IDLE</span></div>
+            <div class="control-row">
+              <label style="width:92px">Speed</label>
+              <input type="range" id="rigSpeedSlider" min="0" max="2.5" step="0.05" value="0" />
+              <span class="val" id="rigSpeedVal">0.00x</span>
+            </div>
+            <div class="chip-row">
+              <button class="chip" data-dir="left">◀ Left</button>
+              <button class="chip" data-dir="right">Right ▶</button>
+              <select id="rigTravelSelect" style="flex:1">
+                <option value="in_place">Walk in Place</option>
+                <option value="translate">Translate Across Screen</option>
+              </select>
+            </div>
+            <div class="chip-row" style="margin-top:6px">
+              <button class="btn btn-sm" id="btnJump" title="Shortcut: J">🦘 Jump (J)</button>
+              <label class="check-row" style="flex:1;justify-content:flex-end">
+                <input type="checkbox" id="clothCheck" checked />
+                <span>Drawstring & hood physics</span>
+              </label>
+            </div>
+          </div>
+        </details>
+
+        <!-- ===================== v2: VIRAL FX ===================== -->
+        <details class="insp-group" open>
+          <summary>🔥 Viral Retention FX</summary>
+
+          <div class="section-label"><span>Camera Punch (adds at playhead)</span><span class="kbd-hint">Z = snap zoom</span></div>
+          <div class="fx-grid" id="cameraFxGrid"></div>
+          <label class="check-row"><input type="checkbox" id="sceneDutchCheck" /><span>Dutch angle for whole scene</span></label>
+          <label class="check-row"><input type="checkbox" id="sceneSpotCheck" /><span>Spotlight dimming for whole scene</span></label>
+
+          <div class="section-label" style="margin-top:10px"><span>Sound Effects (adds at playhead)</span><span class="kbd-hint">B = boom</span></div>
+          <div class="fx-grid" id="sfxGrid"></div>
+          <label class="check-row"><input type="checkbox" id="sfxPreviewOnly" /><span>Preview only (don't add to timeline)</span></label>
+          <div class="control-row" style="margin-top:4px">
+            <label style="width:110px">Scene transition</label>
+            <select id="sceneTransitionSfx"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:110px">SFX volume</label>
+            <input type="range" id="sfxVolumeSlider" min="0" max="1.5" step="0.05" value="0.9" />
+          </div>
+
+          <div class="section-label" style="margin-top:10px"><span>B-Roll / PiP Media Cards</span></div>
+          <div class="control-row">
+            <select id="cardKindSelect"></select>
+            <select id="cardSideSelect" style="width:96px">
+              <option value="auto">Auto side</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <input type="text" id="cardTextInput" placeholder="Card text (meme: TOP | BOTTOM)" />
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Appear at</label>
+            <input type="number" id="cardAppearInput" min="0" step="0.1" value="0.4" style="width:70px" />
+            <label style="width:36px">Hold</label>
+            <input type="number" id="cardHoldInput" min="0" step="0.1" value="0" style="width:70px" title="0 = until scene ends" />
+          </div>
+          <input type="file" id="cardImageInput" accept="image/*" style="display:none" />
+          <div class="chip-row">
+            <button class="btn btn-sm" id="btnCardImage">🖼️ Choose Image</button>
+            <span id="cardImageLabel" class="mini-hint" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No image</span>
+            <button class="btn btn-sm btn-primary" id="btnAddCard">+ Add Card</button>
+          </div>
+          <div id="cardList" class="card-list"></div>
+
+          <div class="section-label" style="margin-top:10px"><span>Animated Captions</span></div>
+          <div class="control-row">
+            <select id="captionModeSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Highlight</label>
+            <input type="color" id="captionColorInput" value="#fde047" />
+            <select id="captionPosSelect" style="flex:1">
+              <option value="bottom">Bottom</option>
+              <option value="middle">Middle</option>
+              <option value="top">Top</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Words</label>
+            <input type="range" id="captionChunkSlider" min="1" max="6" step="1" value="3" />
+            <span class="val" id="captionChunkVal">3</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Size</label>
+            <input type="range" id="captionSizeSlider" min="30" max="80" step="2" value="54" />
+            <span class="val" id="captionSizeVal">54</span>
+          </div>
+          <label class="check-row"><input type="checkbox" id="captionUpperCheck" checked /><span>UPPERCASE</span></label>
+          <label class="check-row"><input type="checkbox" id="captionBounceCheck" checked /><span>Bounce active word</span></label>
+        </details>
 
         <!-- Scene Title & Subtitle / Caption -->
         <div>
@@ -217,12 +373,13 @@
     <div class="timeline-toolbar">
       <div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:11.5px;color:var(--text-muted)">
         <span>⏱️ VOICEOVER WAVEFORM & SCENE TIMELINE</span>
-        <span style="font-weight:400;color:#64748b">(Click waveform to scrub • Drag scene edges to resize • Drag character on canvas to move)</span>
+        <span style="font-weight:400;color:#64748b">(Click waveform to scrub • Drag scene edges to resize • Drag FX markers to retime • Drag IK handles or character on canvas)</span>
       </div>
     </div>
 
     <div class="timeline-tracks">
       <canvas id="waveformCanvas"></canvas>
+      <div class="fx-track" id="fxTrack" title="FX & SFX markers — drag to retime, right-click / double-click to delete"></div>
       <div class="scenes-track" id="scenesTrack"></div>
       <div class="playhead-line" id="playheadLine" style="left:0%">
         <div class="playhead-cap"></div>
@@ -245,6 +402,17 @@
   <script src="assets_bundle.js"></script>
   <script src="backgrounds.js"></script>
   <script src="characterRenderer.js"></script>
+  <script src="rig/rigCore.js"></script>
+  <script src="rig/gestures.js"></script>
+  <script src="rig/locomotion.js"></script>
+  <script src="rig/clothPhysics.js"></script>
+  <script src="rig/props.js"></script>
+  <script src="rig/rigCharacter.js"></script>
+  <script src="fx/cameraFx.js"></script>
+  <script src="fx/captions.js"></script>
+  <script src="fx/sfx.js"></script>
+  <script src="fx/mediaCards.js"></script>
   <script src="app.js"></script>
+  <script src="studioV2.js"></script>
 </body>
 </html>

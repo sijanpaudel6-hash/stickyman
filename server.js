@@ -48,6 +48,7 @@ const server = http.createServer((req, res) => {
         '-preset', 'fast',
         '-crf', '18',
         '-pix_fmt', 'yuv420p',
+        '-r', '60',                 // constant 60 fps (MediaRecorder WebM is variable-frame-rate)
         '-movflags', '+faststart',
         '-c:a', 'aac',
         '-b:a', '192k',

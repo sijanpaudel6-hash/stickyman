@@ -311,7 +311,7 @@ body {
 
 /* Bottom Timeline & Waveform Dock */
 .timeline-dock {
-  height: 205px;
+  height: 236px;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
   display: flex;
@@ -662,3 +662,219 @@ select, input[type="text"], input[type="number"] {
   background: linear-gradient(90deg, var(--accent), var(--success));
   transition: width 0.1s linear;
 }
+
+/* ======================= v2: Rig & Viral FX UI ======================= */
+.pose-btn-rig {
+  grid-column: 1 / -1;
+  background: linear-gradient(90deg, rgba(56, 220, 255, 0.12), rgba(99, 102, 241, 0.16));
+  border-color: rgba(56, 220, 255, 0.45);
+}
+
+.pose-btn-rig.active {
+  border-color: #38dcff;
+  background: linear-gradient(90deg, rgba(56, 220, 255, 0.28), rgba(99, 102, 241, 0.3));
+  box-shadow: 0 0 0 1px rgba(56, 220, 255, 0.35);
+}
+
+.insp-group {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0 10px 10px;
+}
+
+.insp-group > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 0 8px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: #e2e8f0;
+}
+
+.insp-group > summary::-webkit-details-marker { display: none; }
+.insp-group > summary::before { content: '▸ '; color: var(--text-muted); }
+.insp-group[open] > summary::before { content: '▾ '; }
+
+.rig-disabled-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.chip-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  color: var(--text-main);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip:hover { background: var(--bg-card-hover); }
+.chip.active { border-color: #38dcff; background: rgba(56, 220, 255, 0.16); }
+
+.gesture-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.gesture-btn, .prop-btn, .fx-btn {
+  padding: 6px 4px;
+  border-radius: 7px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  color: var(--text-main);
+  font-size: 10.8px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.gesture-btn span:first-child, .prop-btn span:first-child, .fx-btn span:first-child { font-size: 16px; }
+.gesture-btn:hover, .prop-btn:hover, .fx-btn:hover { background: var(--bg-card-hover); }
+.gesture-btn.active, .prop-btn.active { border-color: #38dcff; background: rgba(56, 220, 255, 0.16); }
+.fx-btn:active { transform: scale(0.96); }
+
+.prop-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.prop-btn { font-size: 9.5px; padding: 5px 2px; }
+
+.fx-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+#cameraFxGrid { grid-template-columns: repeat(4, 1fr); }
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #cbd5e1;
+  cursor: pointer;
+  margin-top: 3px;
+}
+
+.val {
+  width: 44px;
+  text-align: right;
+  font-size: 11.5px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #cbd5e1;
+}
+
+.mini-hint {
+  font-size: 10.5px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.kbd-hint {
+  font-size: 10px;
+  text-transform: none;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.speed-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  text-transform: uppercase;
+}
+
+.speed-badge.run { background: rgba(244, 63, 94, 0.2); color: #fda4af; }
+.speed-badge.walk { background: rgba(56, 220, 255, 0.18); color: #7dd3fc; }
+
+input[type="color"] {
+  width: 40px;
+  height: 28px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: #0f131c;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.card-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+}
+
+.card-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* FX marker track in the timeline */
+.fx-track {
+  height: 26px;
+  position: relative;
+  border-bottom: 1px solid #222838;
+  background: repeating-linear-gradient(90deg, #10131b 0, #10131b 39px, #141824 40px);
+  flex-shrink: 0;
+}
+
+.fx-marker {
+  position: absolute;
+  top: 3px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 5px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  cursor: grab;
+  white-space: nowrap;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 5;
+}
+
+.fx-marker.camera { background: rgba(251, 146, 60, 0.35); border-color: rgba(251, 146, 60, 0.75); }
+.fx-marker.sfx { background: rgba(56, 220, 255, 0.28); border-color: rgba(56, 220, 255, 0.7); width: auto !important; }
+.fx-marker.card { background: rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.7); cursor: default; }
+.fx-marker.transition { background: rgba(167, 139, 250, 0.3); border-color: rgba(167, 139, 250, 0.7); cursor: default; }
+.fx-marker:hover { filter: brightness(1.3); }

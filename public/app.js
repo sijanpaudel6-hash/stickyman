@@ -1,4 +1,4 @@
-// app.js - Main Application Logic for Sticky Character Studio
+// app.js - Main Application Logic for Sticky Character Studio (v2: skeletal rig + viral FX engine)
 
 class StickyStudioApp {
   constructor() {
@@ -9,6 +9,21 @@ class StickyStudioApp {
 
     this.bgRenderer = new BackgroundRenderer();
     this.charRenderer = new CharacterRenderer();
+
+    // v2 engines: articulated rig, camera punches, captions, media cards, SFX
+    this.rig = new RigCharacter(this.charRenderer);
+    this.cameraFx = new CameraFxEngine();
+    this.captions = new CaptionRenderer();
+    this.mediaLibrary = new Map(); // id -> { img, name, src }
+    this.cardRenderer = new MediaCardRenderer(this.mediaLibrary);
+    this.sfx = new SfxEngine(() => this.audioCtx);
+    this.captionStyle = defaultCaptionStyle();
+    this.showGizmos = true;
+    this.isExporting = false;
+    this.lastTriggerTime = 0;
+    this.ikDragKey = null;
+    this.draggingFx = null;
+    this.resetTravel = false;
 
     // Timeline & Playback state
     this.totalDuration = 16.0;
@@ -38,7 +53,7 @@ class StickyStudioApp {
       rawVolume: 0,
     };
 
-    // Default 4-Scene YouTube Storytime Timeline
+    // Default 4-Scene YouTube Storytime Timeline (all scenes use the v2 articulated rig)
     this.scenes = [
       {
         id: 'sc_1',
@@ -46,7 +61,7 @@ class StickyStudioApp {
         start: 0.0,
         end: 4.0,
         emotion: 'neutral',
-        pose: 'front',
+        pose: 'rig',
         motion: 'talk_bounce',
         background: 'cozy_night',
         camera: 'zoom_in',
@@ -56,6 +71,9 @@ class StickyStudioApp {
         scale: 1.0,
         flipX: false,
         subtitle: 'So... we need to talk about what happened last night.',
+        rig: defaultRigSettings({ view: 'front', gesture: 'talking' }),
+        cards: [],
+        transitionSfx: 'none',
       },
       {
         id: 'sc_2',
@@ -63,16 +81,21 @@ class StickyStudioApp {
         start: 4.0,
         end: 8.0,
         emotion: 'happy',
-        pose: 'bust',
+        pose: 'rig',
         motion: 'talk_bounce',
         background: 'paper_sketch',
         camera: 'static',
         atmosphere: 'none',
-        x: 0.5,
-        y: 0.62,
-        scale: 1.05,
+        x: 0.3,
+        y: 0.55,
+        scale: 0.95,
         flipX: false,
         subtitle: 'At first, everything was actually going great!',
+        rig: defaultRigSettings({ view: 'three_quarter', gesture: 'idle', prop: 'mug', speed: 0.9, travel: 'translate' }),
+        cards: [
+          { id: 'card_demo_1', kind: 'post', text: 'Day 1 of finally being productive. Coffee in hand, zero bugs. Nothing can stop me now ☕', title: 'Sticky', side: 'left', appear: 1.3, hold: 2.5, size: 0.32 },
+        ],
+        transitionSfx: 'whoosh',
       },
       {
         id: 'sc_3',
@@ -80,34 +103,55 @@ class StickyStudioApp {
         start: 8.0,
         end: 12.0,
         emotion: 'tired',
-        pose: 'front',
+        pose: 'rig',
         motion: 'breathe',
         background: 'rainy_window',
         camera: 'zoom_out',
         atmosphere: 'rain',
-        x: 0.46,
+        x: 0.36,
         y: 0.55,
         scale: 1.0,
         flipX: false,
         subtitle: 'Then it hit 3 AM, and my brain completely stopped working...',
+        rig: defaultRigSettings({ view: 'side', gesture: 'typing' }),
+        cards: [
+          { id: 'card_demo_2', kind: 'note', text: '3 hours later…', side: 'right', appear: 0.05, hold: 1.6, size: 0.3 },
+        ],
+        transitionSfx: 'whoosh',
       },
       {
         id: 'sc_4',
         title: 'The Breakdown',
         start: 12.0,
         end: 16.0,
-        emotion: 'crying',
-        pose: 'bust',
+        emotion: 'shocked',
+        pose: 'rig',
         motion: 'shake',
         background: 'streetlight',
-        camera: 'zoom_in',
+        camera: 'static',
         atmosphere: 'dust',
         x: 0.5,
-        y: 0.62,
-        scale: 1.08,
+        y: 0.55,
+        scale: 1.05,
         flipX: false,
         subtitle: 'And that is when I realized I deleted the entire project.',
+        rig: defaultRigSettings({ view: 'front', gesture: 'hands_head' }),
+        cards: [],
+        transitionSfx: 'scratch',
       },
+    ];
+
+    // Global FX timeline: camera punches + SFX hits (absolute seconds)
+    this.fxEvents = [
+      { id: 'fx_1', kind: 'camera', type: 'snap_zoom', time: 2.1, duration: 1.3, intensity: 1 },
+      { id: 'fx_2', kind: 'sfx', type: 'pop', time: 2.1 },
+      { id: 'fx_3', kind: 'sfx', type: 'typing', time: 8.5 },
+      { id: 'fx_4', kind: 'sfx', type: 'typing', time: 10.1 },
+      { id: 'fx_5', kind: 'camera', type: 'dutch', time: 10.2, duration: 1.7, intensity: 1, dir: 1 },
+      { id: 'fx_6', kind: 'camera', type: 'spotlight', time: 12.2, duration: 3.7, intensity: 1 },
+      { id: 'fx_7', kind: 'camera', type: 'snap_zoom', time: 13.6, duration: 2.3, intensity: 1 },
+      { id: 'fx_8', kind: 'camera', type: 'shake', time: 13.6, duration: 0.8, intensity: 1 },
+      { id: 'fx_9', kind: 'sfx', type: 'boom', time: 13.6 },
     ];
 
     this.selectedSceneId = 'sc_1';
@@ -119,6 +163,7 @@ class StickyStudioApp {
     await this.charRenderer.load();
     this.generateDemoVoiceBuffer();
     this.buildUI();
+    if (window.installStudioV2) window.installStudioV2(this);
     this.bindEvents();
     this.renderTimelineUI();
     this.syncInspectorToSelectedScene();
@@ -269,6 +314,7 @@ class StickyStudioApp {
     }
 
     this.isPlaying = true;
+    this.lastTriggerTime = this.currentTime;
     document.getElementById('btnPlayPause').innerHTML = '⏸ Pause';
   }
 
@@ -292,6 +338,8 @@ class StickyStudioApp {
   seek(timeSec) {
     const clamped = Math.max(0, Math.min(this.totalDuration, timeSec));
     this.currentTime = clamped;
+    this.lastTriggerTime = clamped;
+    this.resetTravel = true;
     const activeScene = this.getSceneAtTime(clamped);
     if (activeScene && activeScene.id !== this.selectedSceneId) {
       this.selectedSceneId = activeScene.id;
@@ -331,6 +379,8 @@ class StickyStudioApp {
       start: t,
       end: oldEnd,
       emotion: overrideEmotion || orig.emotion,
+      cards: [],
+      transitionSfx: 'none',
     };
 
     this.scenes.splice(idx + 1, 0, newScene);
@@ -363,6 +413,11 @@ class StickyStudioApp {
       scale: 1.0,
       flipX: false,
       subtitle: '',
+      rig: last && last.rig
+        ? { ...JSON.parse(JSON.stringify(last.rig)), speed: 0, ik: {} }
+        : defaultRigSettings(),
+      cards: [],
+      transitionSfx: 'whoosh',
     };
 
     this.scenes.push(newScene);
@@ -443,23 +498,71 @@ class StickyStudioApp {
       this.updatePlayheadUI();
     }
 
+    if (this.isPlaying) this.fireTimelineTriggers(this.lastTriggerTime, this.currentTime);
+    this.lastTriggerTime = this.currentTime;
+
     this.updateAudioAnalysis();
-    this.renderStage(timestamp / 1000);
+    this.renderStage(timestamp / 1000, dt);
 
     requestAnimationFrame((ts) => this.loop(ts));
   }
 
-  renderStage(wallTimeSec) {
+  // Fire SFX events, scene-transition SFX and card pop sounds whose time falls in [from, to)
+  fireTimelineTriggers(from, to) {
+    if (to <= from) return;
+    const inWin = (t) => t >= from && t < to;
+    this.fxEvents.forEach((ev) => {
+      if (ev.kind === 'sfx' && inWin(ev.time)) this.sfx.play(ev.type, { volume: ev.volume ?? 1 });
+    });
+    this.scenes.forEach((sc) => {
+      if (sc.transitionSfx && sc.transitionSfx !== 'none' && inWin(sc.start)) this.sfx.play(sc.transitionSfx);
+      (sc.cards || []).forEach((card) => {
+        const sfx = card.sfx === undefined ? 'pop' : card.sfx;
+        if (sfx && sfx !== 'none' && inWin(sc.start + (card.appear || 0))) this.sfx.play(sfx, { volume: 0.8 });
+      });
+    });
+  }
+
+  renderStage(wallTimeSec, dt = 1 / 60) {
     const W = this.canvas.width;
     const H = this.canvas.height;
+    const ctx = this.ctx;
     const scene = this.getSceneAtTime(this.currentTime);
     if (!scene) return;
 
     const sceneDur = Math.max(0.1, scene.end - scene.start);
     const sceneProgress = Math.max(0, Math.min(1, (this.currentTime - scene.start) / sceneDur));
+    const isRig = scene.pose === 'rig';
 
-    // Camera transform per scene
-    this.ctx.save();
+    // Clear (camera tilt / shake can reveal the canvas edge)
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    // Simulate the articulated rig (gait, IK, gestures, cloth physics)
+    if (isRig) {
+      if (!scene.rig) scene.rig = defaultRigSettings();
+      this.rig.update(dt, {
+        scene, W, H, time: wallTimeSec, audio: this.audioState, resetTravel: this.resetTravel,
+      });
+      this.resetTravel = false;
+    }
+
+    // Character anchors in stage space (focus for snap zoom, spotlight & card placement)
+    const head = isRig
+      ? this.rig.headScreen()
+      : { x: (scene.x ?? 0.5) * W, y: (scene.y ?? 0.55) * H - H * (scene.pose === 'bust' ? 0.1 : 0.27) };
+    const chest = isRig
+      ? this.rig.chestScreen()
+      : { x: (scene.x ?? 0.5) * W, y: (scene.y ?? 0.55) * H - H * 0.08 };
+
+    const fx = this.cameraFx.evaluate(this.fxEvents, this.currentTime, scene);
+    ctx.save();
+    this.cameraFx.apply(ctx, W, H, fx, head);
+
+    // Scene camera move
     let camScale = 1.0;
     let camTx = 0;
     let camTy = 0;
@@ -478,64 +581,48 @@ class StickyStudioApp {
     }
 
     if (camScale !== 1.0 || camTx !== 0 || camTy !== 0) {
-      this.ctx.translate(W / 2 + camTx, H / 2 + camTy);
-      this.ctx.scale(camScale, camScale);
-      this.ctx.translate(-W / 2, -H / 2);
+      ctx.translate(W / 2 + camTx, H / 2 + camTy);
+      ctx.scale(camScale, camScale);
+      ctx.translate(-W / 2, -H / 2);
     }
 
-    // 1. Render Background + Atmosphere
-    this.bgRenderer.render(this.ctx, W, H, scene.background, wallTimeSec, scene);
+    // 1. Background + Atmosphere
+    this.bgRenderer.render(ctx, W, H, scene.background, wallTimeSec, scene);
 
-    // 2. Render Sticky Character with Emotion + Lip-Sync
-    this.charRenderer.render(
-      this.ctx,
-      W,
-      H,
-      wallTimeSec,
-      this.audioState,
-      scene,
-      this.faceMode
-    );
+    // 2. Spotlight dimming (background only — the character & glowing eyes stay bright)
+    const charScale = isRig ? this.rig.S : (H * 0.76 / 358) * (scene.scale ?? 1);
+    this.cameraFx.drawSpotlight(ctx, W, H, fx.dim, chest, 150 * charScale);
 
-    this.ctx.restore();
-
-    // 3. Render Subtitle / Caption if present
-    if (scene.subtitle && scene.subtitle.trim().length > 0) {
-      this.renderSubtitle(this.ctx, W, H, scene.subtitle.trim());
+    // 3. Character
+    if (isRig) {
+      this.rig.draw(ctx, {
+        scene,
+        time: wallTimeSec,
+        audio: this.audioState,
+        faceMode: this.faceMode,
+        showGizmos: this.showGizmos && !this.isExporting && !this.isPlaying,
+      });
+    } else {
+      this.charRenderer.render(ctx, W, H, wallTimeSec, this.audioState, scene, this.faceMode);
     }
 
-    // Update HUD labels
-    document.getElementById('hudSceneName').textContent = `${scene.title} • ${scene.emotion.toUpperCase()} (${scene.pose})`;
-  }
-
-  renderSubtitle(ctx, W, H, text) {
-    ctx.save();
-    ctx.font = '700 28px "Inter", system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const metrics = ctx.measureText(text);
-    const padX = 24;
-    const padY = 14;
-    const boxW = Math.min(W * 0.86, metrics.width + padX * 2);
-    const boxH = 52;
-    const bx = (W - boxW) / 2;
-    const by = H - 78;
-
-    ctx.fillStyle = 'rgba(10, 12, 18, 0.82)';
-    ctx.beginPath();
-    ctx.roundRect(bx, by, boxW, boxH, 10);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255, 252, 230, 0.25)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.fillStyle = '#fffdf2';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(text, W / 2, by + boxH / 2, W * 0.82);
     ctx.restore();
+
+    // 4. Picture-in-picture media cards (screen space)
+    this.cardRenderer.render(ctx, W, H, scene, this.currentTime, head ? head.x : W / 2);
+
+    // 5. Animated captions (pop-in words / karaoke / classic box)
+    this.captions.render(ctx, W, H, scene, this.currentTime, this.captionStyle);
+
+    // HUD
+    const rigInfo = isRig
+      ? ` • 🦴 ${scene.rig.gesture}${this.rig.loco.speed > 0.05 ? ` @ ${this.rig.loco.speed.toFixed(2)}x` : ''}`
+      : ` (${scene.pose})`;
+    const hudText = `${scene.title} • ${scene.emotion.toUpperCase()}${rigInfo}`;
+    if (this._hudText !== hudText) {
+      this._hudText = hudText;
+      document.getElementById('hudSceneName').textContent = hudText;
+    }
   }
 
   buildUI() {
@@ -644,6 +731,8 @@ class StickyStudioApp {
     document.querySelectorAll('.bg-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.bg === sc.background);
     });
+
+    if (this.syncV2Inspector) this.syncV2Inspector();
   }
 
   renderTimelineUI() {
@@ -663,7 +752,7 @@ class StickyStudioApp {
         <div class="scene-list-sub">
           <span>${emoObj.icon} ${emoObj.name}</span>
           <span>•</span>
-          <span>Pose: ${sc.pose}</span>
+          <span>Pose: ${sc.pose === 'rig' ? '🦴 ' + (sc.rig?.gesture || 'rig') : sc.pose}</span>
           <span>•</span>
           <span>BG: ${sc.background}</span>
         </div>
@@ -696,7 +785,7 @@ class StickyStudioApp {
           <span>${emoObj.icon} ${sc.title}</span>
           <span style="font-weight:400;opacity:0.8">${(sc.end - sc.start).toFixed(1)}s</span>
         </div>
-        <div class="scene-block-meta">${emoObj.name} • ${sc.pose} • ${sc.background}</div>
+        <div class="scene-block-meta">${emoObj.name} • ${sc.pose === 'rig' ? '🦴 ' + (sc.rig?.gesture || 'rig') + (sc.rig?.speed ? ' ' + sc.rig.speed + 'x' : '') : sc.pose} • ${sc.background}</div>
       `;
 
       block.addEventListener('click', (e) => {
@@ -721,6 +810,7 @@ class StickyStudioApp {
       trackEl.appendChild(block);
     });
 
+    if (this.renderFxTrack) this.renderFxTrack();
     this.updatePlayheadUI();
   }
 
@@ -847,6 +937,7 @@ class StickyStudioApp {
         const sc = this.getSelectedScene();
         if (!sc) return;
         sc.pose = btn.dataset.pose;
+        if (sc.pose === 'rig' && !sc.rig) sc.rig = defaultRigSettings();
         if (sc.pose === 'bust' && sc.y < 0.58) sc.y = 0.62;
         if (sc.pose !== 'bust' && sc.y > 0.60) sc.y = 0.55;
         this.syncInspectorToSelectedScene();
@@ -906,12 +997,51 @@ class StickyStudioApp {
       if (sc) sc.flipX = e.target.checked;
     });
 
-    // Drag character directly on canvas
+    // Canvas: IK effector dragging (hands / feet / head) or drag the whole character
     this.canvas.addEventListener('mousedown', (e) => {
+      const active = this.getSceneAtTime(this.currentTime);
+      if (active && active.pose === 'rig' && this.showGizmos && !this.isPlaying && !e.shiftKey) {
+        const pt = this.canvasPoint(e);
+        const key = this.rig.hitTest(pt.x, pt.y);
+        if (key) {
+          this.ikDragKey = key;
+          this.ikDragScene = active;
+          this.rig.dragKey = key;
+          this.rig.dragEffector(key, pt.x, pt.y, active.rig);
+          e.preventDefault();
+          return;
+        }
+      }
       this.isDraggingChar = true;
       this.updateCharPosFromMouse(e);
     });
+    this.canvas.addEventListener('mousemove', (e) => {
+      const active = this.getSceneAtTime(this.currentTime);
+      if (this.ikDragKey || !active || active.pose !== 'rig' || !this.showGizmos || this.isPlaying) {
+        this.rig.hoverKey = null;
+        this.canvas.style.cursor = this.ikDragKey ? 'grabbing' : '';
+        return;
+      }
+      const pt = this.canvasPoint(e);
+      this.rig.hoverKey = this.rig.hitTest(pt.x, pt.y);
+      this.canvas.style.cursor = this.rig.hoverKey ? 'crosshair' : '';
+    });
+    this.canvas.addEventListener('dblclick', (e) => {
+      const active = this.getSceneAtTime(this.currentTime);
+      if (!active || active.pose !== 'rig') return;
+      const pt = this.canvasPoint(e);
+      const key = this.rig.hitTest(pt.x, pt.y);
+      if (key && active.rig.ik && active.rig.ik[key]) {
+        delete active.rig.ik[key];
+        if (this.syncV2Inspector) this.syncV2Inspector();
+      }
+    });
     window.addEventListener('mousemove', (e) => {
+      if (this.ikDragKey && this.ikDragScene) {
+        const pt = this.canvasPoint(e);
+        this.rig.dragEffector(this.ikDragKey, pt.x, pt.y, this.ikDragScene.rig);
+        return;
+      }
       if (this.isDraggingChar) {
         this.updateCharPosFromMouse(e);
       }
@@ -929,6 +1059,10 @@ class StickyStudioApp {
       }
     });
     window.addEventListener('mouseup', () => {
+      if (this.ikDragKey && this.syncV2Inspector) this.syncV2Inspector();
+      this.ikDragKey = null;
+      this.ikDragScene = null;
+      this.rig.dragKey = null;
       this.isDraggingChar = false;
       this.resizingSceneIndex = -1;
     });
@@ -950,6 +1084,19 @@ class StickyStudioApp {
       } else if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         this.splitSceneAtPlayhead();
+      } else if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        this.showGizmos = !this.showGizmos;
+        if (this.syncV2Inspector) this.syncV2Inspector();
+      } else if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        this.rig.loco.triggerJump();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        if (this.addFxEvent) this.addFxEvent('camera', 'snap_zoom');
+      } else if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        if (this.addFxEvent) this.addFxEvent('sfx', 'boom');
       } else {
         const matchedEmo = window.EMOTIONS.find(em => em.hotkey === e.key);
         if (matchedEmo) {
@@ -961,6 +1108,15 @@ class StickyStudioApp {
 
     // Export Video (MP4)
     document.getElementById('btnExportMp4').addEventListener('click', () => this.exportFullVideoMp4());
+  }
+
+  // Mouse event → canvas pixel coordinates (independent of CSS scaling)
+  canvasPoint(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * this.canvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * this.canvas.height,
+    };
   }
 
   updateCharPosFromMouse(e) {
@@ -1012,7 +1168,9 @@ class StickyStudioApp {
       recorder.onstop = () => resolve();
     });
 
-    this.currentTime = 0;
+    this.isExporting = true;
+    this.sfx.setExtraDestination(audioDest);
+    this.seek(0);
     recorder.start(100);
     this.play(true, audioDest);
 
@@ -1027,6 +1185,8 @@ class StickyStudioApp {
 
     await donePromise;
     clearInterval(progressTimer);
+    this.isExporting = false;
+    this.sfx.setExtraDestination(null);
 
     statusText.textContent = 'Encoding YouTube-ready MP4 (H.264 + AAC via FFmpeg)...';
     progressFill.style.width = '98%';
