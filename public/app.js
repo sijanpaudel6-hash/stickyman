@@ -307,6 +307,7 @@ class StickyStudioApp {
   setAudioTrack(buffer, label, isDemo, rescale = true) {
     this.pause();
     this.audioBuffer = buffer;
+    this.audioPath = null;   // set by the agent bridge when the track was loaded from a disk path
     this.audioIsDemo = isDemo;
     this.audioFileName = label;
     const lbl = document.getElementById('audioFileLabel');
@@ -622,7 +623,9 @@ class StickyStudioApp {
     this.lastFrameTimestamp = timestamp;
 
     if (this.isPlaying) {
-      if (this.audioBuffer && this.audioCtx) {
+      // Audio clock when the AudioContext runs; frame clock otherwise (e.g. an agent-opened tab whose
+      // autoplay policy keeps audio suspended) so the timeline never freezes.
+      if (this.audioBuffer && this.audioCtx && this.audioCtx.state === 'running') {
         this.currentTime = this.audioStartOffset + (this.audioCtx.currentTime - this.audioStartContextTime);
       } else {
         this.currentTime += dt;
@@ -1407,9 +1410,15 @@ class StickyStudioApp {
     }
   }
 
-  async exportFullVideoMp4() {
+  // Records the whole timeline in real time and converts it with FFmpeg on the server.
+  // opts.download (default true) triggers a browser download; the remote bridge passes false.
+  // Resolves to { mp4Path, duration, sizeBytes, audioRunning } or { error, ... }.
+  async exportFullVideoMp4(opts = {}) {
+    const download = opts.download !== false;
     this.pause();
     this.ensureAudioContext();
+    try { await this.audioCtx.resume(); } catch (e) { /* autoplay policy */ }
+    const audioRunning = this.audioCtx.state === 'running';
 
     const overlay = document.getElementById('exportOverlay');
     const statusText = document.getElementById('exportStatusText');
@@ -1475,30 +1484,46 @@ class StickyStudioApp {
         body: webmBlob,
       });
 
-      if (!res.ok) throw new Error('MP4 conversion failed');
+      if (!res.ok) {
+        let details = '';
+        try { details = (await res.json()).details || ''; } catch (e) { /* not JSON */ }
+        throw new Error(`MP4 conversion failed ${details}`.trim());
+      }
       const savedPath = res.headers.get('X-Saved-Path') || '';
       const mp4Blob = await res.blob();
-      const downloadUrl = URL.createObjectURL(mp4Blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `sticky_youtube_video_${Date.now()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      if (download) {
+        const downloadUrl = URL.createObjectURL(mp4Blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `sticky_youtube_video_${Date.now()}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
 
       progressFill.style.width = '100%';
       statusText.textContent = savedPath
         ? `Done! Saved MP4 to ${savedPath}`
         : 'Done! MP4 downloaded.';
       setTimeout(() => overlay.classList.remove('visible'), 2200);
+      return {
+        mp4Path: savedPath,
+        duration: Number(this.totalDuration.toFixed(2)),
+        sizeBytes: mp4Blob.size,
+        audioRunning,
+        ...(audioRunning ? {} : { audioWarning: 'The AudioContext was suspended by the browser autoplay policy, so the video may be silent. Click once in the studio tab (or use the headless browser) and export again.' }),
+      };
     } catch (err) {
-      // Fallback download WebM if needed
-      const url = URL.createObjectURL(webmBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sticky_youtube_video_${Date.now()}.webm`;
-      a.click();
       overlay.classList.remove('visible');
+      if (download) {
+        // Fallback: download the raw WebM recording
+        const url = URL.createObjectURL(webmBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sticky_youtube_video_${Date.now()}.webm`;
+        a.click();
+      }
+      return { error: err.message, webmBytes: webmBlob.size, duration: Number(this.totalDuration.toFixed(2)) };
     }
   }
 }

@@ -17,6 +17,33 @@ A local, browser-based YouTube Animation & Lip-Sync Studio built for the **Stick
 - **1-Click MP4 Video Export**:
   - Renders 60fps video + audio and encodes a YouTube-ready `.mp4` (`H.264 + AAC`) via local `ffmpeg`.
 
+## v4 — AI Agent Control: MCP Server · Live Browser Bridge · CLI Director
+
+Claude Code (or Antigravity) can now **direct the studio from natural language**: load your music and Google Flow photos from disk, build beat-cut storyboards, look at rendered frames, fix them, and export the MP4. Nothing to install: every piece is plain Node built-ins plus browser JS.
+
+```bash
+# Claude Code: the MCP server is registered in .mcp.json — just open Claude Code in this repo.
+claude          # then e.g. "Make a 3 AM loneliness short from ~/flow/*.jpg and ~/music/piano.mp3"
+
+# Or drive it yourself with the CLI (starts the server and a headless studio automatically):
+node cli.js load-audio ~/music/piano.mp3 --mode silent
+node cli.js import-photos ~/flow/room.jpg ~/flow/street.jpg ~/flow/sunset.jpg --auto-build
+node cli.js snapshot 4.5 /tmp/check.png
+node cli.js export
+```
+
+- **`mcp-server.js`** is a stdio MCP server (JSON-RPC 2.0: `initialize`, `ping`, `tools/list`, `tools/call`) with 11 tools: `sticky_status`, `sticky_get_project`, `sticky_load_audio`, `sticky_import_photos`, `sticky_apply_template`, `sticky_set_project`, `sticky_update_scene`, `sticky_split_scene`, `sticky_add_fx`, `sticky_render_frame` (returns the PNG as an MCP **image** block so the agent can see it), and `sticky_export_mp4`. It starts `server.js` if it isn't running.
+- **`cli.js`** has the same actions as commands: `status`, `get-project`, `set-project`, `update-scene`, `split`, `load-audio`, `import-photos`, `template`, `add-fx`, `snapshot`, `export`.
+- **Live bridge** (`server.js` + `public/remoteBridge.js`):
+  - The studio tab connects to `GET /api/bridge/events` (Server-Sent Events) and answers RPCs via `POST /api/bridge/reply`. Agents call `POST /api/rpc {action, params}`. A **🤖 Agent Bridge** pill in the topbar shows the link status.
+  - If an action needs the canvas and no tab is open, the server opens one: your default browser when a display is available, otherwise **headless Chromium** (`STICKY_BROWSER=auto|headless|open|none`, `STICKY_CHROME=/path`).
+  - `GET /api/local-file?path=/abs/file` streams local audio, images and video into the studio (with Range support), so no file-picker is needed.
+  - The project is mirrored to `projects/live_state.json`. Status and project edits work even with no tab open, and a newly opened studio **restores** the last project, reloading music and photos from their disk paths (`?fresh=1` skips this).
+- **Exact frames:** `render_frame` re-simulates the timeline at 30 fps up to the requested time, so walking position, cloth, hood-pull actions and transitions match playback.
+- **Shared schema:** `public/projectSchema.js` defines the flat agent format with aliases (`threeQuarter`, `crossfade`, `vine_boom`, …) and returns clear warnings for invalid IDs. Node and the browser both use it.
+- **Director playbook:** `CLAUDE.md` (Claude Code) and `.agent/skills/sticky-director/SKILL.md` (Antigravity) list every valid ID and the directing workflow.
+- **Security:** the server now binds to `127.0.0.1` (set `HOST=0.0.0.0` to expose it on your LAN) and rejects cross-site requests to `/api/*`, so other websites can't read your files or drive the studio.
+
 ## v3 — Silent Emotional Short Film & Cinematic Photo Engine
 
 Made for no-narration films (music and ambience only) about loneliness, social anxiety, emptiness, burnout and quiet discipline, built from **Google Flow** photos and the rigged Sticky character.
@@ -116,4 +143,4 @@ public/studioV2.js           inspector UI, FX timeline track, project save/load
 node server.js
 ```
 
-You can also open `public/index.html` directly in any modern browser.
+You can also open `public/index.html` directly in any modern browser (the agent bridge and local-file loading need `node server.js`).

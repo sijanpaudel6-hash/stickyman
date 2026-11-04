@@ -2,3 +2,5 @@ node_modules/
 exports/*.mp4
 exports/*.webm
 .DS_Store
+# v4 agent bridge: live project state, backups & server log (per user)
+projects/

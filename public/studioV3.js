@@ -61,21 +61,25 @@
       app.syncInspectorToSelectedScene();
     };
 
-    app.loadTemplate = (id) => {
+    // opts: { usePhotos (default: checkbox), photoIds (explicit order) }
+    app.loadTemplate = (id, opts = {}) => {
       const tpl = window.SILENT_TEMPLATES.find((t) => t.id === id);
-      if (!tpl) return;
+      if (!tpl) return null;
       app.ensureAudioContext();
       app.setFilmMode('silent');
       const shots = tpl.shots();
-      const photos = app.customPhotoIds();
-      if ($('templatePhotosCheck').checked && photos.length) {
+      const photos = opts.photoIds && opts.photoIds.length ? opts.photoIds : app.customPhotoIds();
+      const usePhotos = opts.usePhotos ?? $('templatePhotosCheck').checked;
+      if (usePhotos && photos.length) {
         shots.forEach((s, i) => { s.background = photos[i % photos.length]; });
       }
       app.applyStoryboard(shots, { fadeOut: tpl.fadeOut });
+      return tpl;
     };
 
-    app.autoBuildFromPhotos = () => {
-      const photos = app.customPhotoIds();
+    // ids: optional subset/order of photo background ids (default: every uploaded photo)
+    app.autoBuildFromPhotos = (ids) => {
+      const photos = Array.isArray(ids) && ids.length ? ids : app.customPhotoIds();
       if (!photos.length) {
         alert('Upload one or more photos first (🖼️ Upload Photos supports multi-select).');
         return;
