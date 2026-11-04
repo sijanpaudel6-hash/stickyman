@@ -139,7 +139,8 @@ class CharacterRenderer {
       defaultScale = (H * 0.76) / spriteH;
     }
 
-    const totalScale = defaultScale * scaleUser;
+    const framing = (window.STUDIO_FRAMING && window.STUDIO_FRAMING.charScale) || 1;
+    const totalScale = defaultScale * scaleUser * framing;
 
     ctx.save();
     ctx.translate(posX + offsetX, posY + offsetY);

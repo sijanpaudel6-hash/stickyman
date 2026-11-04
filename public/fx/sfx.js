@@ -8,7 +8,15 @@
     { id: 'scratch', name: 'Record Scratch', icon: '💿' },
     { id: 'shutter', name: 'Camera Shutter', icon: '📸' },
     { id: 'typing', name: 'Keyboard Typing', icon: '⌨️' },
+    // v3 — Silent film foley
+    { id: 'footstep_wet', name: 'Wet Footstep', icon: '👟', foley: true },
+    { id: 'heavy_sigh_breath', name: 'Heavy Sigh', icon: '😮‍💨', foley: true },
+    { id: 'phone_vibrate', name: 'Phone Vibrate', icon: '📳', foley: true },
+    { id: 'door_close_echo', name: 'Door Close Echo', icon: '🚪', foley: true },
   ];
+  // Hidden helper sounds (auto-triggered, not shown in the picker)
+  window.SFX_HIDDEN = [{ id: 'footstep', name: 'Footstep (dry)' }];
+  window.SFX_LIBRARY = window.SFX_LIST;
 
   class SfxEngine {
     constructor(getAudioCtx) {
@@ -33,7 +41,11 @@
         this.master = ac.createGain();
         this.master.gain.value = this.volume;
         this.comp.connect(this.master);
-        this.master.connect(ac.destination);
+        // Shared output bus: SFX master + ambient beds → speakers AND the MP4 export recorder
+        this.bus = ac.createGain();
+        this.bus.gain.value = 1;
+        this.master.connect(this.bus);
+        this.bus.connect(ac.destination);
         const len = ac.sampleRate * 2;
         this.noise = ac.createBuffer(1, len, ac.sampleRate);
         const d = this.noise.getChannelData(0);
@@ -42,7 +54,7 @@
           seed = (seed * 1664525 + 1013904223) >>> 0;
           d[i] = (seed / 4294967296) * 2 - 1;
         }
-        if (this.extraDest) this.master.connect(this.extraDest);
+        if (this.extraDest) this.bus.connect(this.extraDest);
       }
       return ac;
     }
@@ -50,11 +62,11 @@
     // Route SFX into the MP4 export recorder as well
     setExtraDestination(node) {
       this.ensure();
-      if (this.extraDest && this.master) {
-        try { this.master.disconnect(this.extraDest); } catch (e) {}
+      if (this.extraDest && this.bus) {
+        try { this.bus.disconnect(this.extraDest); } catch (e) {}
       }
       this.extraDest = node;
-      if (node && this.master) this.master.connect(node);
+      if (node && this.bus) this.bus.connect(node);
     }
 
     setVolume(v) {
@@ -97,9 +109,152 @@
         case 'scratch': this.scratch(ac, t0, out); break;
         case 'shutter': this.shutter(ac, t0, out); break;
         case 'typing': this.typing(ac, t0, out); break;
+        case 'footstep_wet': this.footstep(ac, t0, out, true, opts.variant || 0); break;
+        case 'footstep': this.footstep(ac, t0, out, false, opts.variant || 0); break;
+        case 'heavy_sigh_breath': this.sighBreath(ac, t0, out); break;
+        case 'phone_vibrate': this.vibrate(ac, t0, out); break;
+        case 'door_close_echo': this.door(ac, t0, out); break;
         default: break;
       }
-      setTimeout(() => { try { out.disconnect(); } catch (e) {} }, 4000);
+      setTimeout(() => { try { out.disconnect(); } catch (e) {} }, 6000);
+    }
+
+    // Soft sneaker step; wet = splashy high noise tail on top of the heel thud
+    footstep(ac, t0, out, wet, variant) {
+      const v = ((variant * 7919) % 100) / 100;
+      const o = ac.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(95 + v * 25, t0);
+      o.frequency.exponentialRampToValueAtTime(55, t0 + 0.08);
+      const og = this.envGain(ac, t0, 0.45, 0.004, 0.09);
+      o.connect(og).connect(out);
+      o.start(t0);
+      o.stop(t0 + 0.15);
+      const n = this.noiseSrc(ac, t0, 0.12);
+      const bp = ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 600 + v * 300;
+      bp.Q.value = 0.9;
+      const ng = this.envGain(ac, t0, 0.32, 0.003, 0.07);
+      n.connect(bp).connect(ng).connect(out);
+      if (wet) {
+        const s = this.noiseSrc(ac, t0 + 0.012, 0.25, 1.2);
+        const hp = ac.createBiquadFilter();
+        hp.type = 'bandpass';
+        hp.frequency.setValueAtTime(2600 + v * 1500, t0);
+        hp.frequency.exponentialRampToValueAtTime(5200, t0 + 0.18);
+        hp.Q.value = 1.4;
+        const sg = this.envGain(ac, t0 + 0.012, 0.3, 0.01, 0.17);
+        s.connect(hp).connect(sg).connect(out);
+      }
+    }
+
+    // Airy, slow exhale with a soft formant sweep
+    sighBreath(ac, t0, out) {
+      const dur = 1.7;
+      const n = this.noiseSrc(ac, t0, dur);
+      const bp = ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 1.6;
+      bp.frequency.setValueAtTime(1500, t0);
+      bp.frequency.exponentialRampToValueAtTime(650, t0 + dur);
+      const lp = ac.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 3200;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.55, t0 + 0.25);
+      g.gain.setValueAtTime(0.5, t0 + 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      n.connect(bp).connect(lp).connect(g).connect(out);
+      // faint voiced undertone
+      const o = ac.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(140, t0);
+      o.frequency.exponentialRampToValueAtTime(95, t0 + dur);
+      const og = this.envGain(ac, t0 + 0.1, 0.035, 0.3, 1.1);
+      const olp = ac.createBiquadFilter();
+      olp.type = 'lowpass';
+      olp.frequency.value = 500;
+      o.connect(olp).connect(og).connect(out);
+      o.start(t0);
+      o.stop(t0 + dur + 0.1);
+    }
+
+    // Double buzz of a phone on a table / in hand
+    vibrate(ac, t0, out) {
+      [0, 0.42].forEach((off) => {
+        const t = t0 + off;
+        const o = ac.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 165;
+        const am = ac.createOscillator();
+        am.frequency.value = 28;
+        const amG = ac.createGain();
+        amG.gain.value = 0.35;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+        g.gain.setValueAtTime(0.5, t + 0.27);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+        am.connect(amG).connect(g.gain);
+        const lp = ac.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 900;
+        o.connect(lp).connect(g).connect(out);
+        // table rattle
+        const n = this.noiseSrc(ac, t, 0.32);
+        const bp = ac.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 2200;
+        bp.Q.value = 4;
+        const ng = ac.createGain();
+        ng.gain.setValueAtTime(0.0001, t);
+        ng.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+        ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+        n.connect(bp).connect(ng).connect(out);
+        [o, am].forEach((x) => { x.start(t); x.stop(t + 0.35); });
+      });
+    }
+
+    // Heavy door shutting in an empty hallway: thump + latch click + long echo tail
+    door(ac, t0, out) {
+      const wet = ac.createGain();
+      wet.gain.value = 0.5;
+      const delay = ac.createDelay(1.5);
+      delay.delayTime.value = 0.23;
+      const fb = ac.createGain();
+      fb.gain.value = 0.45;
+      const dlp = ac.createBiquadFilter();
+      dlp.type = 'lowpass';
+      dlp.frequency.value = 900;
+      delay.connect(dlp).connect(fb).connect(delay);
+      dlp.connect(wet).connect(out);
+      const dry = ac.createGain();
+      dry.gain.value = 1;
+      dry.connect(out);
+      dry.connect(delay);
+      const o = ac.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(90, t0);
+      o.frequency.exponentialRampToValueAtTime(42, t0 + 0.35);
+      const og = this.envGain(ac, t0, 0.9, 0.004, 0.45);
+      o.connect(og).connect(dry);
+      o.start(t0);
+      o.stop(t0 + 0.6);
+      const n = this.noiseSrc(ac, t0, 0.2);
+      const lp = ac.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 700;
+      const ng = this.envGain(ac, t0, 0.7, 0.002, 0.16);
+      n.connect(lp).connect(ng).connect(dry);
+      const c = this.noiseSrc(ac, t0 + 0.07, 0.03);
+      const hp = ac.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 2500;
+      const cg = this.envGain(ac, t0 + 0.07, 0.45, 0.001, 0.025);
+      c.connect(hp).connect(cg).connect(dry);
+      setTimeout(() => { try { fb.disconnect(); delay.disconnect(); } catch (e) {} }, 5000);
     }
 
     whoosh(ac, t0, out) {

@@ -21,6 +21,9 @@
       this.distance = 0;       // integrated ground distance (local units) for translate mode
       this.jumpT = -1;         // seconds since jump started (-1 = inactive)
       this.lastJumpLanded = false;
+      this.contacts = 0;       // heel-strike counter (drives auto footstep foley)
+      this.landings = 0;       // jump landing counter
+      this.lastContactLeg = 'front';
     }
 
     reset(distance = 0) {
@@ -38,11 +41,22 @@
       if (this.speed < 0.004 && this.targetSpeed === 0) this.speed = 0;
 
       const p = this.params();
+      const prevPhase = this.phase;
       this.phase = (this.phase + TAU * p.freq * dt) % (TAU * 1000);
       this.distance += p.groundSpeed * dt;
 
+      // Foot contact (heel strike): near leg at φ ≡ π/2, far leg at φ ≡ 3π/2 → every π.
+      const k0 = Math.floor((prevPhase - Math.PI / 2) / Math.PI);
+      const k1 = Math.floor((this.phase - Math.PI / 2) / Math.PI);
+      if (k1 !== k0 && this.phase > prevPhase && p.walkW > 0.3) {
+        this.contacts++;
+        this.lastContactLeg = ((k1 % 2) + 2) % 2 === 0 ? 'front' : 'back';
+      }
+
       if (this.jumpT >= 0) {
+        const before = this.jumpT;
         this.jumpT += dt;
+        if (before < 0.66 && this.jumpT >= 0.66) this.landings++;
         if (this.jumpT > 0.9) this.jumpT = -1;
       }
       return p;

@@ -96,7 +96,11 @@
     update(dt, anchors, rootAccel, opts = {}) {
       const strength = opts.strength ?? 1;
       const gravity = 1150;
-      const ax = clamp(-rootAccel.x * 0.85 * strength, -9000, 9000);
+      // Wind (local units, + = blowing toward the facing direction) gusts through strings, hem & hood
+      const wind = (opts.wind || 0) * strength;
+      this.time = (this.time || 0) + dt;
+      const flutter = Math.sin(this.time * 7.3) * 0.5 + Math.sin(this.time * 11.1 + 1.7) * 0.5;
+      const ax = clamp(-rootAccel.x * 0.85 * strength + wind * (650 + 220 * flutter), -9000, 9000);
       const ay = clamp(gravity - rootAccel.y * 0.85 * strength, -6000, 9000);
       const h = 1 / 120;
       this.accumulator = Math.min(this.accumulator + dt, 0.1);
@@ -105,8 +109,8 @@
         this.ropes.right.step(h, anchors.right, { x: ax, y: ay }, { minX: opts.minX });
         this.accumulator -= h;
       }
-      this.hem.step(clamp(-rootAccel.x * 0.0035 * strength, -7, 7), dt);
-      this.hood.step(clamp(-rootAccel.y * 0.003 * strength, -6, 6), dt);
+      this.hem.step(clamp(-rootAccel.x * 0.0035 * strength + wind * (3.2 + 1.4 * flutter), -9, 9), dt);
+      this.hood.step(clamp(-rootAccel.y * 0.003 * strength - Math.abs(wind) * (0.8 + 0.8 * flutter), -6, 6), dt);
     }
 
     points(side) {

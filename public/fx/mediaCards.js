@@ -62,10 +62,11 @@
         side = this.latchedSide.get(card.id);
       }
       const sgn = side === 'right' ? 1 : -1;
-      const cw = clamp(card.size || 0.34, 0.15, 0.6) * W;
+      const vertical = H > W;   // 9:16 → cards float above the character instead of beside it
+      const cw = clamp((card.size || 0.34) * (vertical ? 1.9 : 1), 0.15, 0.82) * W;
       const layout = this.measure(ctx, card, cw);
-      const cx = W / 2 + sgn * W * 0.235 + (card.offsetX || 0) * W;
-      const cy = H * 0.42 + (card.offsetY || 0) * H + Math.sin(time * 1.6 + idx) * 4;
+      const cx = vertical ? W / 2 + sgn * W * 0.04 : W / 2 + sgn * W * 0.235 + (card.offsetX || 0) * W;
+      const cy = (vertical ? H * 0.24 : H * 0.42) + (card.offsetY || 0) * H + Math.sin(time * 1.6 + idx) * 4;
       const settle = clamp(local / 0.6, 0, 1);
       const rot = (-sgn * 3 + Math.sin(local * 9) * 2.5 * (1 - settle)) * Math.PI / 180;
 

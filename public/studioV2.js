@@ -410,7 +410,27 @@
     });
 
     // ---------- Project save / load ----------
-    $('btnSaveProject').addEventListener('click', () => {
+    // Read an object-URL backed image as a data URL so photo backgrounds survive save/load
+    const toDataUrl = async (url) => {
+      const blob = await (await fetch(url)).blob();
+      return new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => resolve(null);
+        r.readAsDataURL(blob);
+      });
+    };
+    $('btnSaveProject').addEventListener('click', async () => {
+      const backgrounds = {};
+      const usedBg = new Set(app.scenes.map((sc) => sc.background));
+      for (const [id, item] of app.bgRenderer.customMedia.entries()) {
+        if (item.type !== 'image') continue;     // videos are too large to embed
+        if (!usedBg.has(id) && app.bgRenderer.customMedia.size > 12) continue;
+        try {
+          const src = await toDataUrl(item.url);
+          if (src) backgrounds[id] = { name: item.name, src };
+        } catch (e) { /* skip */ }
+      }
       const usedMedia = new Set();
       app.scenes.forEach((sc) => (sc.cards || []).forEach((c) => c.mediaId && usedMedia.add(c.mediaId)));
       const media = {};
@@ -426,6 +446,11 @@
         fxEvents: app.fxEvents,
         captionStyle: app.captionStyle,
         media,
+        backgrounds,
+        filmMode: app.filmMode,
+        aspect: app.aspect,
+        filmFadeOut: app.filmFadeOut,
+        ambientMaster: app.ambientMaster,
       };
       const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -450,6 +475,17 @@
           img.onerror = resolve;
           img.src = m.src;
         })));
+        await Promise.all(Object.entries(data.backgrounds || {}).map(([id, m]) => new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => { app.bgRenderer.registerCustomMedia(id, 'image', img, m.name, m.src); resolve(); };
+          img.onerror = resolve;
+          img.src = m.src;
+        })));
+        app.renderBackgroundButtons();
+        if (data.aspect && app.setAspect) app.setAspect(data.aspect);
+        if (data.filmMode && app.setFilmMode) app.setFilmMode(data.filmMode);
+        app.filmFadeOut = data.filmFadeOut || 0;
+        if (typeof data.ambientMaster === 'number') { app.ambientMaster = data.ambientMaster; app.ambient.setMasterVolume(data.ambientMaster); }
         data.scenes.forEach((sc) => {
           if (sc.pose === 'rig' && !sc.rig) sc.rig = window.defaultRigSettings();
           if (sc.rig) sc.rig = window.defaultRigSettings(sc.rig);

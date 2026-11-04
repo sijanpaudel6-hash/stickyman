@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sticky Character Studio v2 — Rig & Viral Engine</title>
+  <title>Sticky Character Studio v3 — Silent Film Engine</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -15,18 +15,31 @@
         <div class="brand-eyes"><span></span><span></span></div>
       </div>
       <span>Sticky Character Studio</span>
-      <span class="badge">v2 · Rig + Viral Engine</span>
+      <span class="badge">v3 · Silent Film Engine</span>
+      <div class="mode-toggle" title="Voiceover = mouth lip-syncs to the track. Silent Film = music drives mood, never the mouth.">
+        <button class="mode-btn active" data-film-mode="voiceover">🎙️ Voiceover</button>
+        <button class="mode-btn" data-film-mode="silent">🎬 Silent Film</button>
+      </div>
     </div>
 
     <div class="topbar-actions">
+      <select id="aspectSelect" class="topbar-select" title="Canvas aspect ratio">
+        <option value="16:9">16:9 YouTube (1280×720)</option>
+        <option value="16:9_cinema">16:9 + 2.35:1 Cinema Bars</option>
+        <option value="9:16">9:16 Shorts / Reels / TikTok (720×1280)</option>
+      </select>
+      <select id="templateSelect" class="topbar-select" title="Load a ready-made silent film storyboard">
+        <option value="">🎞️ Silent Film Templates…</option>
+      </select>
+
       <input type="file" id="audioFileInput" accept="audio/*" style="display:none" />
-      <button class="btn btn-primary" id="btnUploadAudio" title="Upload your MP3/WAV voiceover">
-        🎵 Upload Voiceover (MP3/WAV)
+      <button class="btn btn-primary" id="btnUploadAudio" title="Upload your MP3/WAV voiceover or music track">
+        🎵 Upload Audio
       </button>
 
-      <input type="file" id="bgFileInput" accept="image/*,video/*" style="display:none" />
-      <button class="btn" id="btnUploadBg" title="Upload custom background image or video">
-        🖼️ Upload Background
+      <input type="file" id="bgFileInput" accept="image/*,video/*" multiple style="display:none" />
+      <button class="btn" id="btnUploadBg" title="Upload one or many background photos / videos (e.g. Google Flow shots)">
+        🖼️ Upload Photos
       </button>
 
       <button class="btn" id="btnMicToggle" title="Use live microphone for testing or live recording">
@@ -57,11 +70,21 @@
       </div>
       <div class="panel-body">
         <div style="background:#0f131c;border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:11.5px;color:#cbd5e1;line-height:1.45">
-          <div style="font-weight:700;color:#fff;margin-bottom:3px">🔊 Active Voiceover Track:</div>
+          <div style="font-weight:700;color:#fff;margin-bottom:3px">🔊 Active Audio Track:</div>
           <div id="audioFileLabel" style="color:#a5b4fc;word-break:break-all">Built-in Demo Voiceover (16.0s)</div>
           <div style="margin-top:6px;color:var(--text-muted);font-size:11px">
             Tip: Press <b>Space</b> to play, press <b>S</b> to split a scene at the playhead, or press <b>1–9 / 0</b> to switch emotions.
           </div>
+        </div>
+
+        <div class="silent-box">
+          <div style="font-weight:700;color:#fff;margin-bottom:4px">🎬 Silent Film Builder</div>
+          <div id="beatInfoLabel" class="mini-hint">Switch to Silent Film mode to see beat markers.</div>
+          <div id="photoInfoLabel" class="mini-hint" style="margin:4px 0 6px">No photos uploaded yet.</div>
+          <button class="btn btn-sm btn-primary" id="btnAutoBuild" title="Distribute every uploaded photo across the music length, cutting on beats">✨ Auto-Build Scenes from Photos</button>
+          <label class="check-row"><input type="checkbox" id="snapBeatsCheck" checked /><span>Snap cuts (S) to the nearest beat</span></label>
+          <label class="check-row"><input type="checkbox" id="filmFadeCheck" /><span>Fade to black at the end of the film</span></label>
+          <label class="check-row"><input type="checkbox" id="templatePhotosCheck" checked /><span>Templates use my uploaded photos</span></label>
         </div>
 
         <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#cbd5e1;cursor:pointer">
@@ -83,7 +106,7 @@
               <span id="hudSceneName">Scene 1 • NEUTRAL (front)</span>
             </div>
             <div class="hud-pill">
-              <span>Voice Lip-Sync</span>
+              <span id="hudMeterLabel">Voice Lip-Sync</span>
               <div class="mic-meter"><div class="mic-meter-fill" id="micMeterFill"></div></div>
             </div>
           </div>
@@ -201,6 +224,91 @@
             </label>
           </div>
         </div>
+
+        <!-- ===================== v3: SILENT FILM & CINEMATIC ===================== -->
+        <details class="insp-group" id="silentGroup" open>
+          <summary>🎬 Silent Film · Cinematic Shot</summary>
+
+          <div class="section-label"><span>Transition Into This Scene</span></div>
+          <div class="control-row">
+            <select id="transitionTypeSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Duration</label>
+            <input type="range" id="transitionDurSlider" min="0" max="2" step="0.1" value="1" />
+            <span class="val" id="transitionDurVal">1.0s</span>
+          </div>
+
+          <div class="section-label" style="margin-top:8px"><span>Photo Camera (Ken Burns 2.5D)</span></div>
+          <div class="control-row">
+            <select id="kenBurnsSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Foreground</label>
+            <select id="foregroundSelect"></select>
+          </div>
+
+          <div class="section-label" style="margin-top:8px"><span>Light Match to Photo</span><button class="btn btn-sm" id="btnLightAuto" title="Recommended values for photo backgrounds">Auto</button></div>
+          <div class="control-row">
+            <label style="width:72px">Ambient tint</label>
+            <input type="range" id="lightTintSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="lightTintVal">0%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Rim light</label>
+            <input type="range" id="lightRimSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="lightRimVal">0%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Exposure</label>
+            <input type="range" id="lightExpSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="lightExpVal">0%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Rim side</label>
+            <select id="lightSideSelect">
+              <option value="auto">Auto (from photo)</option>
+              <option value="left">Light from left</option>
+              <option value="right">Light from right</option>
+              <option value="back">Backlit (both edges)</option>
+            </select>
+          </div>
+          <div id="lightSwatches" class="light-swatches"></div>
+
+          <div class="section-label" style="margin-top:8px"><span>Silent Acting</span></div>
+          <div class="control-row">
+            <label style="width:72px">Mouth</label>
+            <select id="silentMouthSelect"></select>
+          </div>
+          <label class="check-row"><input type="checkbox" id="hoodUpCheck" /><span>🧥 Hood up (all views)</span></label>
+          <div class="control-row" style="margin-top:4px">
+            <label style="width:72px">Wind</label>
+            <input type="range" id="windSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="windVal">0%</span>
+          </div>
+          <label class="check-row"><input type="checkbox" id="foleyCheck" /><span>Auto foley (footsteps, sighs)</span></label>
+
+          <div class="section-label" style="margin-top:8px"><span>Ambient Soundscape</span></div>
+          <div class="control-row">
+            <select id="ambientSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Scene vol</label>
+            <input type="range" id="ambientVolSlider" min="0" max="100" step="1" value="60" />
+            <span class="val" id="ambientVolVal">60%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Master</label>
+            <input type="range" id="ambientMasterSlider" min="0" max="100" step="1" value="80" />
+            <span class="val" id="ambientMasterVal">80%</span>
+          </div>
+          <label class="check-row"><input type="checkbox" id="ambientPreviewCheck" /><span>🔊 Preview ambience while paused</span></label>
+          <div class="control-row" style="margin-top:4px">
+            <label style="width:72px">Music → mood</label>
+            <input type="range" id="musicReactSlider" min="0" max="200" step="5" value="100" />
+            <span class="val" id="musicReactVal">100%</span>
+          </div>
+        </details>
 
         <!-- ===================== v2: BODY RIG ===================== -->
         <details class="insp-group" id="rigGroup" open>
@@ -412,7 +520,13 @@
   <script src="fx/captions.js"></script>
   <script src="fx/sfx.js"></script>
   <script src="fx/mediaCards.js"></script>
+  <script src="fx/musicAnalysis.js"></script>
+  <script src="fx/lightMatch.js"></script>
+  <script src="fx/cinematic.js"></script>
+  <script src="fx/ambient.js"></script>
+  <script src="templates.js"></script>
   <script src="app.js"></script>
   <script src="studioV2.js"></script>
+  <script src="studioV3.js"></script>
 </body>
 </html>

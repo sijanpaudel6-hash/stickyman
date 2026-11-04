@@ -11,12 +11,22 @@ class StickyStudioApp {
     this.charRenderer = new CharacterRenderer();
 
     // v2 engines: articulated rig, camera punches, captions, media cards, SFX
-    this.rig = new RigCharacter(this.charRenderer);
+    // v3: a pool of two rigs so a cross-dissolve can render the outgoing and incoming shots at once
+    this.rigPool = [new RigCharacter(this.charRenderer), new RigCharacter(this.charRenderer)];
+    this.activeRig = this.rigPool[0];
+    this.frameCount = 0;
+    this.lightMatcher = new LightMatcher();
+    this.sceneLayer = null;
+    this.aspect = '16:9';
+    this.filmFadeOut = 0;           // seconds of fade-to-black at the end of the film
+    this.ambientPreview = false;
+    this.ambientMaster = 0.8;
     this.cameraFx = new CameraFxEngine();
     this.captions = new CaptionRenderer();
     this.mediaLibrary = new Map(); // id -> { img, name, src }
     this.cardRenderer = new MediaCardRenderer(this.mediaLibrary);
     this.sfx = new SfxEngine(() => this.audioCtx);
+    this.ambient = new AmbientEngine(this.sfx);
     this.captionStyle = defaultCaptionStyle();
     this.showGizmos = true;
     this.isExporting = false;
@@ -51,7 +61,18 @@ class StickyStudioApp {
       mouthOpen: 0,
       mouthForm: 0.5,
       rawVolume: 0,
+      musicEnergy: 0,   // Silent Film Mode: smoothed low-frequency energy (0..1)
+      beatPulse: 0,     // Silent Film Mode: 1 on a beat, decays to 0
     };
+
+    // v3: Silent Film / Music-Only Mode
+    this.filmMode = 'voiceover';     // 'voiceover' (lip-sync) | 'silent' (music only)
+    this.audioIsDemo = true;
+    this.musicAnalysis = null;       // { beats:[{time,strength}], bpm }
+    this.snapToBeats = true;
+    this.musicReactivity = 1.0;
+    this.bassAvg = 0;
+    this.liveBeatTime = -10;
 
     // Default 4-Scene YouTube Storytime Timeline (all scenes use the v2 articulated rig)
     this.scenes = [
@@ -159,11 +180,49 @@ class StickyStudioApp {
     this.resizingSceneIndex = -1;
   }
 
+  // The rig currently rendering the active scene (IK dragging, jump, HUD)
+  get rig() {
+    return this.activeRig || this.rigPool[0];
+  }
+
+  // Pick a rig for a scene: keep the one already bound to it, else re-use the most recently used one
+  // (continuity across cuts in the same shot), never the excluded rig (the other half of a dissolve).
+  getRigFor(scene, exclude = null) {
+    const bound = this.rigPool.find((r) => r.sceneId === scene.id && r !== exclude);
+    if (bound) return bound;
+    return this.rigPool.filter((r) => r !== exclude).sort((a, b) => b.lastUsedFrame - a.lastUsedFrame)[0];
+  }
+
+  sceneIndexAtTime(t) {
+    for (let i = 0; i < this.scenes.length; i++) {
+      const sc = this.scenes[i];
+      if (t >= sc.start && t <= sc.end + 0.001) return i;
+    }
+    return this.scenes.length - 1;
+  }
+
+  // 16:9 widescreen · 16:9 with 2.35:1 cinema bars · 9:16 vertical Shorts/Reels/TikTok
+  setAspect(mode) {
+    if (!['16:9', '16:9_cinema', '9:16'].includes(mode)) mode = '16:9';
+    this.aspect = mode;
+    const vertical = mode === '9:16';
+    this.canvas.width = vertical ? 720 : 1280;
+    this.canvas.height = vertical ? 1280 : 720;
+    window.STUDIO_FRAMING = { charScale: vertical ? 0.72 : 1, vertical };
+    const wrap = this.canvas.parentElement;
+    if (wrap) wrap.classList.toggle('vertical', vertical);
+    const sel = document.getElementById('aspectSelect');
+    if (sel) sel.value = mode;
+    this.rigPool.forEach((r) => { r.root.init = false; });
+  }
+
   async init() {
     await this.charRenderer.load();
     this.generateDemoVoiceBuffer();
+    try { this.musicAnalysis = window.MusicAnalysis.analyzeBeats(this.audioBuffer); } catch (e) { this.musicAnalysis = null; }
     this.buildUI();
     if (window.installStudioV2) window.installStudioV2(this);
+    if (window.installStudioV3) window.installStudioV3(this);
     this.bindEvents();
     this.renderTimelineUI();
     this.syncInspectorToSelectedScene();
@@ -231,6 +290,7 @@ class StickyStudioApp {
 
     this.audioBuffer = buf;
     this.totalDuration = dur;
+    this.audioIsDemo = true;
   }
 
   async handleAudioFileUpload(file) {
@@ -240,26 +300,72 @@ class StickyStudioApp {
 
     const arrayBuf = await file.arrayBuffer();
     const decoded = await this.audioCtx.decodeAudioData(arrayBuf);
-    this.audioBuffer = decoded;
-    this.audioFileName = `${file.name} (${decoded.duration.toFixed(1)}s)`;
-    document.getElementById('audioFileLabel').textContent = this.audioFileName;
+    this.setAudioTrack(decoded, `${file.name} (${decoded.duration.toFixed(1)}s)`, false);
+  }
 
-    // Adjust timeline duration to match the uploaded audio file
+  // Install an audio track, rescale the storyboard to its length and run beat analysis.
+  setAudioTrack(buffer, label, isDemo, rescale = true) {
+    this.pause();
+    this.audioBuffer = buffer;
+    this.audioIsDemo = isDemo;
+    this.audioFileName = label;
+    const lbl = document.getElementById('audioFileLabel');
+    if (lbl) lbl.textContent = label;
+
     const oldDur = this.totalDuration;
-    const newDur = Math.max(2.0, decoded.duration);
+    const newDur = Math.max(2.0, buffer.duration);
     this.totalDuration = newDur;
-
-    // Scale scene boundaries proportionally to fit new audio duration
-    const ratio = newDur / oldDur;
-    this.scenes.forEach((sc, idx) => {
-      sc.start = Number((sc.start * ratio).toFixed(2));
-      sc.end = idx === this.scenes.length - 1 ? newDur : Number((sc.end * ratio).toFixed(2));
-    });
-
+    if (rescale) {
+      const ratio = newDur / oldDur;
+      this.scenes.forEach((sc, idx) => {
+        sc.start = Number((sc.start * ratio).toFixed(2));
+        sc.end = idx === this.scenes.length - 1 ? newDur : Number((sc.end * ratio).toFixed(2));
+      });
+      this.fxEvents.forEach((ev) => { ev.time = Number(Math.min(newDur - 0.05, ev.time * ratio).toFixed(2)); });
+    }
+    try {
+      this.musicAnalysis = window.MusicAnalysis.analyzeBeats(buffer);
+    } catch (e) {
+      this.musicAnalysis = null;
+    }
     this.currentTime = 0;
+    this.lastTriggerTime = 0;
     this.renderTimelineUI();
     this.drawWaveform();
     this.syncInspectorToSelectedScene();
+    if (this.updateBeatInfo) this.updateBeatInfo();
+  }
+
+  // 🎙️ Voiceover (lip-sync) vs 🎬 Silent Film (music only)
+  setFilmMode(mode) {
+    if (mode !== 'voiceover' && mode !== 'silent') return;
+    const changed = this.filmMode !== mode;
+    this.filmMode = mode;
+    if (changed && this.audioIsDemo) {
+      this.ensureAudioContext();
+      if (mode === 'silent') {
+        const music = window.MusicAnalysis.generateDemoMusic(this.audioCtx, 24);
+        this.setAudioTrack(music, 'Built-in Demo Piano Track (24.0s · 72 BPM)', true);
+      } else {
+        this.generateDemoVoiceBuffer();
+        this.setAudioTrack(this.audioBuffer, 'Built-in Demo Voiceover (16.0s)', true);
+      }
+    }
+    this.audioState.mouthOpen = 0;
+    document.querySelectorAll('[data-film-mode]').forEach((b) => b.classList.toggle('active', b.dataset.filmMode === mode));
+    document.body.classList.toggle('silent-mode', mode === 'silent');
+    const hudLbl = document.getElementById('hudMeterLabel');
+    if (hudLbl) hudLbl.textContent = mode === 'silent' ? '♪ Music Energy' : 'Voice Lip-Sync';
+    this.drawWaveform();
+    if (this.syncV2Inspector) this.syncV2Inspector();
+  }
+
+  // Audio state handed to the character: in Silent Film Mode the mouth follows the per-scene
+  // silent-acting override instead of the music.
+  characterAudio(scene, timeSec) {
+    if (this.filmMode !== 'silent') return this.audioState;
+    const m = window.MusicAnalysis.silentMouthState(scene.silentMouth || 'closed', timeSec);
+    return { ...this.audioState, mouthOpen: m.mouthOpen, mouthForm: m.mouthForm };
   }
 
   async toggleMicrophone() {
@@ -364,7 +470,12 @@ class StickyStudioApp {
   }
 
   splitSceneAtPlayhead(overrideEmotion = null) {
-    const t = Number(this.currentTime.toFixed(2));
+    let tRaw = this.currentTime;
+    if (this.filmMode === 'silent' && this.snapToBeats) {
+      const b = window.MusicAnalysis.nearestBeat(this.musicAnalysis, tRaw, 0.35);
+      if (b) tRaw = b.time;
+    }
+    const t = Number(tRaw.toFixed(2));
     const idx = this.scenes.findIndex(s => t > s.start + 0.35 && t < s.end - 0.35);
     if (idx === -1) return null;
 
@@ -445,15 +556,48 @@ class StickyStudioApp {
     this.syncInspectorToSelectedScene();
   }
 
-  updateAudioAnalysis() {
+  updateAudioAnalysis(dt = 1 / 60) {
+    const st = this.audioState;
+    st.beatPulse *= Math.exp(-5.5 * dt);
     if (!this.analyserNode || (!this.isPlaying && !this.micActive)) {
-      this.audioState.mouthOpen *= 0.72;
-      this.audioState.rawVolume = 0;
+      st.mouthOpen *= 0.72;
+      st.musicEnergy *= Math.exp(-3 * dt);
+      st.rawVolume = 0;
       document.getElementById('micMeterFill').style.width = '0%';
       return;
     }
 
     this.analyserNode.getByteFrequencyData(this.freqData);
+
+    if (this.filmMode === 'silent') {
+      // Music drives atmosphere/breathing — NEVER the mouth.
+      st.mouthOpen = 0;
+      let bass = 0;
+      for (let i = 1; i < 6; i++) bass += this.freqData[i];
+      bass = bass / 5 / 255;
+      let mid = 0;
+      for (let i = 6; i < 40; i++) mid += this.freqData[i];
+      mid = mid / 34 / 255;
+      const energy = Math.min(1, (bass * 0.7 + mid * 0.3) * 1.5 * this.musicReactivity);
+      st.musicEnergy = st.musicEnergy + (energy - st.musicEnergy) * (1 - Math.exp(-8 * dt));
+      // Beats: use the offline analysis (sample-accurate, identical in export); fall back to live flux.
+      const b = window.MusicAnalysis.lastBeatBefore(this.musicAnalysis, this.currentTime);
+      if (b && this.musicAnalysis.beats.length) {
+        const since = this.currentTime - b.time;
+        st.beatPulse = Math.max(st.beatPulse, since >= 0 && since < 0.6 ? b.strength * Math.exp(-since * 5.5) : 0);
+      } else {
+        if (bass > this.bassAvg * 1.35 && bass > 0.2 && performance.now() / 1000 - this.liveBeatTime > 0.25) {
+          st.beatPulse = 1;
+          this.liveBeatTime = performance.now() / 1000;
+        }
+      }
+      this.bassAvg = this.bassAvg * 0.95 + bass * 0.05;
+      st.beatPulse = Math.min(1, st.beatPulse * this.musicReactivity);
+      st.rawVolume = Math.round(st.musicEnergy * 100);
+      document.getElementById('micMeterFill').style.width = `${st.rawVolume}%`;
+      return;
+    }
+    st.musicEnergy *= Math.exp(-3 * dt);
     // Voice energy resides mostly in bins 2..65 (approx 85Hz to 3200Hz)
     let lowSum = 0;
     let highSum = 0;
@@ -501,7 +645,7 @@ class StickyStudioApp {
     if (this.isPlaying) this.fireTimelineTriggers(this.lastTriggerTime, this.currentTime);
     this.lastTriggerTime = this.currentTime;
 
-    this.updateAudioAnalysis();
+    this.updateAudioAnalysis(dt);
     this.renderStage(timestamp / 1000, dt);
 
     requestAnimationFrame((ts) => this.loop(ts));
@@ -527,38 +671,119 @@ class StickyStudioApp {
     const W = this.canvas.width;
     const H = this.canvas.height;
     const ctx = this.ctx;
-    const scene = this.getSceneAtTime(this.currentTime);
+    const t = this.currentTime;
+    const idx = this.sceneIndexAtTime(t);
+    const scene = this.scenes[idx];
     if (!scene) return;
+    this.frameCount++;
 
-    const sceneDur = Math.max(0.1, scene.end - scene.start);
-    const sceneProgress = Math.max(0, Math.min(1, (this.currentTime - scene.start) / sceneDur));
-    const isRig = scene.pose === 'rig';
-
-    // Clear (camera tilt / shake can reveal the canvas edge)
+    // Clear (camera tilt / shake / Ken Burns can reveal the canvas edge)
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
 
+    // Music → atmosphere (Silent Film Mode only)
+    const silent = this.filmMode === 'silent';
+    this.bgRenderer.musicPulse = silent ? this.audioState.beatPulse : 0;
+    this.bgRenderer.musicEnergy = silent ? this.audioState.musicEnergy : 0;
+
+    const tr = window.Cinematic.transitionState(this.scenes, idx, t, { filmFadeOut: this.filmFadeOut, total: this.totalDuration });
+    let outRig = null;
+    if (tr.outgoing) outRig = this.getRigFor(tr.outgoing, null);
+    this.activeRig = this.getRigFor(scene, outRig);
+    const showGizmos = this.showGizmos && !this.isExporting && !this.isPlaying && !tr.outgoing;
+
+    let head;
+    if (tr.outgoing) {
+      // Cross-dissolve: outgoing shot underneath, incoming shot blended on top
+      this.renderSceneLayer(ctx, tr.outgoing, wallTimeSec, dt, outRig, { primary: false });
+      if (!this.sceneLayer || this.sceneLayer.width !== W || this.sceneLayer.height !== H) {
+        this.sceneLayer = document.createElement('canvas');
+        this.sceneLayer.width = W;
+        this.sceneLayer.height = H;
+        this.sceneLayerCtx = this.sceneLayer.getContext('2d');
+      }
+      const lc = this.sceneLayerCtx;
+      lc.setTransform(1, 0, 0, 1, 0, 0);
+      lc.fillStyle = '#000';
+      lc.fillRect(0, 0, W, H);
+      head = this.renderSceneLayer(lc, scene, wallTimeSec, dt, this.activeRig, { primary: true });
+      ctx.save();
+      ctx.globalAlpha = tr.dissolve;
+      ctx.drawImage(this.sceneLayer, 0, 0);
+      ctx.restore();
+    } else {
+      head = this.renderSceneLayer(ctx, scene, wallTimeSec, dt, this.activeRig, { primary: true, gizmos: showGizmos });
+    }
+
+    // Fade through black / white
+    if (tr.fade > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, tr.fade);
+      ctx.fillStyle = tr.fadeColor;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
+    // 2.35:1 cinema letterbox
+    if (this.aspect === '16:9_cinema') window.Cinematic.Letterbox.render(ctx, W, H, 2.35);
+
+    // Animated captions (drawn over fades → silent-film title cards over black work naturally)
+    this.captions.render(ctx, W, H, scene, t, this.captionStyle);
+
+    // Foley events from the active rig (footsteps on heel strike, sigh exhales, jump landings)
+    if (this.isPlaying) this.playRigFoley(scene, this.activeRig);
+
+    // Ambient soundscape bed for the active scene
+    this.ambient.update(scene.ambient || 'none', (scene.ambientVolume ?? 0.6) * 1, this.isPlaying || this.ambientPreview);
+
+    // HUD
+    const isRig = scene.pose === 'rig';
+    const rigInfo = isRig
+      ? ` • 🦴 ${scene.rig.gesture}${this.rig.loco.speed > 0.05 ? ` @ ${this.rig.loco.speed.toFixed(2)}x` : ''}`
+      : ` (${scene.pose})`;
+    const trInfo = tr.outgoing ? ' • ⧉ dissolve' : (tr.fade > 0.01 ? ' • ◐ fade' : '');
+    const hudText = `${scene.title} • ${scene.emotion.toUpperCase()}${rigInfo}${trInfo}`;
+    if (this._hudText !== hudText) {
+      this._hudText = hudText;
+      document.getElementById('hudSceneName').textContent = hudText;
+    }
+    return head;
+  }
+
+  // Render one complete shot (camera, Ken Burns photo, atmosphere, spotlight, light-matched character,
+  // foreground depth overlay, media cards) into a context.
+  renderSceneLayer(ctx, scene, wallTimeSec, dt, rig, opts = {}) {
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const t = this.currentTime;
+    const sceneDur = Math.max(0.1, scene.end - scene.start);
+    const sceneProgress = Math.max(0, Math.min(1, (t - scene.start) / sceneDur));
+    const isRig = scene.pose === 'rig';
+    const charAudio = this.characterAudio(scene, wallTimeSec);
+
     // Simulate the articulated rig (gait, IK, gestures, cloth physics)
     if (isRig) {
       if (!scene.rig) scene.rig = defaultRigSettings();
-      this.rig.update(dt, {
-        scene, W, H, time: wallTimeSec, audio: this.audioState, resetTravel: this.resetTravel,
+      rig.update(dt, {
+        scene, W, H, time: wallTimeSec, audio: charAudio,
+        resetTravel: opts.primary ? this.resetTravel : false,
+        frame: this.frameCount, sceneTime: t - scene.start,
       });
-      this.resetTravel = false;
+      if (opts.primary) this.resetTravel = false;
     }
 
-    // Character anchors in stage space (focus for snap zoom, spotlight & card placement)
+    const framing = (window.STUDIO_FRAMING && window.STUDIO_FRAMING.charScale) || 1;
     const head = isRig
-      ? this.rig.headScreen()
-      : { x: (scene.x ?? 0.5) * W, y: (scene.y ?? 0.55) * H - H * (scene.pose === 'bust' ? 0.1 : 0.27) };
+      ? rig.headScreen()
+      : { x: (scene.x ?? 0.5) * W, y: (scene.y ?? 0.55) * H - H * framing * (scene.pose === 'bust' ? 0.1 : 0.27) };
     const chest = isRig
-      ? this.rig.chestScreen()
-      : { x: (scene.x ?? 0.5) * W, y: (scene.y ?? 0.55) * H - H * 0.08 };
+      ? rig.chestScreen()
+      : { x: (scene.x ?? 0.5) * W, y: (scene.y ?? 0.55) * H - H * framing * 0.08 };
 
-    const fx = this.cameraFx.evaluate(this.fxEvents, this.currentTime, scene);
+    const fx = this.cameraFx.evaluate(this.fxEvents, t, scene);
     ctx.save();
     this.cameraFx.apply(ctx, W, H, fx, head);
 
@@ -566,7 +791,6 @@ class StickyStudioApp {
     let camScale = 1.0;
     let camTx = 0;
     let camTy = 0;
-
     if (scene.camera === 'zoom_in') {
       camScale = 1.0 + sceneProgress * 0.12;
     } else if (scene.camera === 'zoom_out') {
@@ -579,50 +803,74 @@ class StickyStudioApp {
       camTx = Math.sin(wallTimeSec * 1.9) * 6;
       camTy = Math.cos(wallTimeSec * 2.3) * 4;
     }
-
     if (camScale !== 1.0 || camTx !== 0 || camTy !== 0) {
       ctx.translate(W / 2 + camTx, H / 2 + camTy);
       ctx.scale(camScale, camScale);
       ctx.translate(-W / 2, -H / 2);
     }
 
-    // 1. Background + Atmosphere
-    this.bgRenderer.render(ctx, W, H, scene.background, wallTimeSec, scene);
+    // 1. Background photo with 2.5D Ken Burns drift (the photo moves fully, the character only 30%)
+    const KB = window.Cinematic.KenBurns;
+    const kbMode = scene.kenBurns || 'none';
+    const kbBg = KB.transform(kbMode, sceneProgress, wallTimeSec, W, H, 1);
+    ctx.save();
+    KB.apply(ctx, W, H, kbBg);
+    this.bgRenderer.render(ctx, W, H, scene.background, wallTimeSec, scene, { skipAtmosphere: true });
+    ctx.restore();
+    this.bgRenderer.renderAtmosphere(ctx, W, H, wallTimeSec, scene, scene.background);
 
     // 2. Spotlight dimming (background only — the character & glowing eyes stay bright)
-    const charScale = isRig ? this.rig.S : (H * 0.76 / 358) * (scene.scale ?? 1);
+    const charScale = isRig ? rig.S : (H * 0.76 / 358) * (scene.scale ?? 1) * framing;
     this.cameraFx.drawSpotlight(ctx, W, H, fx.dim, chest, 150 * charScale);
 
-    // 3. Character
+    // 3. Character, colour-matched & rim-lit to the photo
+    ctx.save();
+    KB.apply(ctx, W, H, KB.transform(kbMode, sceneProgress, wallTimeSec, W, H, 0.3));
+    const lighting = this.bgRenderer.getLighting(scene.background, wallTimeSec);
+    const lightSt = LightMatcher.settingsFor(scene);
+    const graded = LightMatcher.isActive(lightSt);
     if (isRig) {
-      this.rig.draw(ctx, {
-        scene,
-        time: wallTimeSec,
-        audio: this.audioState,
-        faceMode: this.faceMode,
-        showGizmos: this.showGizmos && !this.isExporting && !this.isPlaying,
-      });
+      const faceOver = graded && rig.faceOverlayAllowed(scene);
+      const drawP = {
+        scene, time: wallTimeSec, audio: charAudio, faceMode: this.faceMode, showGizmos: false, skipFace: faceOver,
+        skipShadow: graded,
+      };
+      if (graded) rig.drawShadow(ctx, scene);
+      this.lightMatcher.render(ctx, W, H, lighting, lightSt, (c) => rig.draw(c, drawP));
+      if (faceOver) rig.drawFaceOverlay(ctx, drawP);
+      rig.drawLightFX(ctx, drawP);
+      if (opts.gizmos) rig.drawGizmoOverlay(ctx, scene.rig);
     } else {
-      this.charRenderer.render(ctx, W, H, wallTimeSec, this.audioState, scene, this.faceMode);
+      this.lightMatcher.render(ctx, W, H, lighting, lightSt,
+        (c) => this.charRenderer.render(c, W, H, wallTimeSec, charAudio, scene, this.faceMode));
     }
-
+    ctx.restore();
     ctx.restore();
 
-    // 4. Picture-in-picture media cards (screen space)
-    this.cardRenderer.render(ctx, W, H, scene, this.currentTime, head ? head.x : W / 2);
+    // 4. Foreground depth overlay (bokeh / rain streaks / windowpane) — parallax opposite the drift
+    window.Cinematic.Foreground.render(ctx, W, H, scene.foreground || 'none', wallTimeSec, kbBg,
+      this.filmMode === 'silent' ? this.audioState.beatPulse : 0);
 
-    // 5. Animated captions (pop-in words / karaoke / classic box)
-    this.captions.render(ctx, W, H, scene, this.currentTime, this.captionStyle);
+    // 5. Picture-in-picture media cards (screen space)
+    this.cardRenderer.render(ctx, W, H, scene, t, head ? head.x : W / 2);
+    return head;
+  }
 
-    // HUD
-    const rigInfo = isRig
-      ? ` • 🦴 ${scene.rig.gesture}${this.rig.loco.speed > 0.05 ? ` @ ${this.rig.loco.speed.toFixed(2)}x` : ''}`
-      : ` (${scene.pose})`;
-    const hudText = `${scene.title} • ${scene.emotion.toUpperCase()}${rigInfo}`;
-    if (this._hudText !== hudText) {
-      this._hudText = hudText;
-      document.getElementById('hudSceneName').textContent = hudText;
-    }
+  playRigFoley(scene, rig) {
+    if (!rig || !rig.events || !rig.events.length || scene.pose !== 'rig') return;
+    const auto = scene.rig.foley ?? (this.filmMode === 'silent');
+    if (!auto) return;
+    const wet = scene.ambient === 'rain_window' || scene.foreground === 'rain_streaks' || scene.background === 'rainy_window';
+    rig.events.forEach((ev, i) => {
+      if (ev.type === 'footstep') {
+        this.sfx.play(wet ? 'footstep_wet' : 'footstep', { volume: 0.32 + 0.22 * Math.min(ev.speed || 1, 2), variant: this.frameCount + i });
+      } else if (ev.type === 'land') {
+        this.sfx.play('footstep', { volume: 1.0, variant: 3 });
+      } else if (ev.type === 'sigh') {
+        this.sfx.play('heavy_sigh_breath', { volume: 0.8 });
+      }
+    });
+    rig.events = [];
   }
 
   buildUI() {
@@ -866,6 +1114,24 @@ class StickyStudioApp {
       const barH = Math.max(2, Math.min(H - 4, max * H * 1.9));
       ctx.fillRect(x, (H - barH) / 2, 1, barH);
     }
+
+    // Silent Film Mode: beat markers so cuts (S) can be aligned to musical hits / drops
+    if (this.filmMode === 'silent' && this.musicAnalysis) {
+      const dur = this.totalDuration;
+      this.musicAnalysis.beats.forEach((b) => {
+        const x = (b.time / dur) * W;
+        const strong = b.strength > 0.6;
+        ctx.fillStyle = strong ? 'rgba(251, 191, 36, 0.95)' : 'rgba(251, 191, 36, 0.45)';
+        const h = 6 + b.strength * 14;
+        ctx.fillRect(Math.round(x), 0, strong ? 2 : 1, h);
+        ctx.fillRect(Math.round(x), H - h, strong ? 2 : 1, h);
+      });
+      if (this.musicAnalysis.bpm) {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
+        ctx.font = '700 10px system-ui, sans-serif';
+        ctx.fillText(`♪ ~${this.musicAnalysis.bpm} BPM · ${this.musicAnalysis.beats.length} beats`, 6, 12);
+      }
+    }
   }
 
   bindEvents() {
@@ -900,28 +1166,39 @@ class StickyStudioApp {
     const bgInput = document.getElementById('bgFileInput');
     document.getElementById('btnUploadBg').addEventListener('click', () => bgInput.click());
     bgInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      const id = 'custom_bg_' + Date.now();
-      if (file.type.startsWith('video/')) {
-        const vid = document.createElement('video');
-        vid.src = url;
-        vid.muted = true;
-        vid.loop = true;
-        vid.play();
-        this.bgRenderer.registerCustomMedia(id, 'video', vid, file.name, url);
+      // v3: batch upload — select 5–10 Google Flow photos (or clips) at once
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      let firstId = null;
+      const loads = files.map((file, i) => new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const id = `custom_bg_${Date.now()}_${i}`;
+        if (i === 0) firstId = id;
+        if (file.type.startsWith('video/')) {
+          const vid = document.createElement('video');
+          vid.src = url;
+          vid.muted = true;
+          vid.loop = true;
+          vid.playsInline = true;
+          vid.play().catch(() => {});
+          this.bgRenderer.registerCustomMedia(id, 'video', vid, file.name, url);
+          resolve();
+        } else {
+          const img = new Image();
+          img.onload = () => {
+            this.bgRenderer.registerCustomMedia(id, 'image', img, file.name, url);
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = url;
+        }
+      }));
+      Promise.all(loads).then(() => {
         this.renderBackgroundButtons();
-        this.selectBackground(id);
-      } else {
-        const img = new Image();
-        img.onload = () => {
-          this.bgRenderer.registerCustomMedia(id, 'image', img, file.name, url);
-          this.renderBackgroundButtons();
-          this.selectBackground(id);
-        };
-        img.src = url;
-      }
+        if (firstId && this.bgRenderer.customMedia.has(firstId)) this.selectBackground(firstId);
+        if (this.updatePhotoInfo) this.updatePhotoInfo();
+      });
+      bgInput.value = '';
     });
 
     document.getElementById('btnApplyBgAll').addEventListener('click', () => {

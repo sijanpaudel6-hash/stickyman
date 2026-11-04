@@ -6,7 +6,7 @@
 //   front (near) arm = character's RIGHT arm → lat = -o
 //   back  (far)  arm = character's LEFT  arm → lat = +o
 (function () {
-  const { clamp, lerp, smoothNoise, Spring1D, projectBody } = window.RigCore;
+  const { clamp, lerp, smoothstep, easeInOut, smoothNoise, Spring1D, projectBody } = window.RigCore;
 
   window.HAND_STATES = [
     { id: 'relaxed', name: 'Relaxed' },
@@ -30,6 +30,13 @@
     { id: 'shrug',        name: 'Shrug',            icon: '🤷' },
     { id: 'wave',         name: 'Wave Hello',       icon: '👋' },
     { id: 'typing',       name: 'Sit & Type',       icon: '⌨️' },
+    // v3 — Silent acting (no dialogue: emotion through posture, breath and micro-actions)
+    { id: 'slouch_lonely',      name: 'Lonely Slouch',     icon: '😶', silent: true },
+    { id: 'heavy_sigh',         name: 'Heavy Sigh',        icon: '😮‍💨', silent: true },
+    { id: 'check_phone_dark',   name: 'Phone in Dark',     icon: '📱', silent: true },
+    { id: 'sit_curb_hug_knees', name: 'Hug Knees',         icon: '🫂', silent: true, preferView: 'three_quarter' },
+    { id: 'look_back_horizon',  name: 'Gaze at Horizon',   icon: '🌅', silent: true, preferView: 'back' },
+    { id: 'pull_hood_up',       name: 'Pull Hood Up',      icon: '🧢', silent: true },
   ];
 
   window.PROP_LIST = [
@@ -68,6 +75,16 @@
     controller: { o: 12, z: 42, up: 58, eo: 34, ez: -6, eu: 38, handRel: -0.9 },
     book:       { o: 16, z: 40, up: 70, eo: 32, ez: -6, eu: 44, handRel: -0.6 },
   };
+
+  const lerpSpec = (a, b, t) => {
+    const o = { ...b };
+    ['o', 'z', 'up', 'eo', 'ez', 'eu', 'handRel'].forEach((k) => {
+      if (typeof a[k] === 'number' && typeof b[k] === 'number') o[k] = lerp(a[k], b[k], t);
+    });
+    o.hand = t < 0.5 ? a.hand : b.hand;
+    return o;
+  };
+  const POCKET = { o: 12, z: 18, up: 12, eo: 52, ez: -12, eu: 46, hand: 'in_pocket', handRel: 0.5 };
 
   class GestureController {
     constructor() {
@@ -115,15 +132,20 @@
 
     /**
      * Compute the upper-body goal for a gesture.
-     * opts: { t (seconds), prop, turn }
-     * Returns { front, back, headTilt, headNod, lean, shoulderLift, sit, desk, walkArms, usesFront }
+     * opts: { t (seconds, wall clock), sceneT (seconds since scene start, timeline), prop }
+     * Returns { front, back, headTilt, headNod, lean, shoulderLift, sit, desk, walkArms, usesFront,
+     *           breathRate, breathDepth, breathOverride, wind, hood, phoneLight, sighCycle, prop, propArm }
      */
     compute(id, opts) {
       const t = opts.t || 0;
+      const sceneT = opts.sceneT ?? t;
       const out = {
         front: null, back: null,
         headTilt: 0, headNod: 0, lean: 0, shoulderLift: 0,
-        sit: false, desk: false, walkArms: 'keep', usesFront: false, bothHands: false,
+        sit: null, desk: false, walkArms: 'keep', usesFront: false, bothHands: false,
+        breathRate: 2.4, breathDepth: 1, breathOverride: undefined,
+        wind: 0, hood: undefined, phoneLight: 0, sighCycle: undefined, minTurn: 0, legsFront: false,
+        customProp: false, noProp: false,
       };
       const breath = Math.sin(t * 2.4);
 
@@ -232,8 +254,108 @@
           out.back = armGoal('back', { o: 12, z: 70, up: 37 + tb, eo: 30, ez: 18, eu: 24, hand: 'relaxed', handAbs: Math.PI / 2 - 0.22 });
           out.lean = 0.16;
           out.headNod = 0.12;
-          out.sit = true;
+          out.sit = { pelvis: { x: -2, y: -84 }, ankles: { front: { x: 70, y: -10 }, back: { x: 62, y: -10 } }, kneeHint: { x: 80, y: -30 }, stool: true };
           out.desk = true;
+          out.minTurn = 0.82;
+          out.bothHands = true;
+          break;
+        }
+        case 'slouch_lonely': {
+          // Deep slouch / empty stare: hunched spine, dropped shoulders, head hanging, very slow heavy breath
+          const slow = Math.sin(t * 1.15);
+          out.front = armGoal('front', { ...POCKET, up: 6 + slow * 0.8, eu: 40 });
+          out.back = armGoal('back', { ...POCKET, up: 6 + slow * 0.8, eu: 40 });
+          out.lean = 0.18;
+          out.shoulderLift = -6;
+          out.headNod = 0.32;
+          out.headTilt = 0.05 + smoothNoise(t * 0.15) * 0.04;
+          out.breathRate = 1.15;
+          out.breathDepth = 2.2;
+          break;
+        }
+        case 'heavy_sigh': {
+          // 4.5 s cycle: slow inhale 1.4 s (chest & shoulders rise, head tips up) → hold 0.4 s →
+          // fast exhale 0.6 s (slump) → lingering droop.
+          const u = ((t % 4.5) + 4.5) % 4.5;
+          let rise;
+          if (u < 1.4) rise = easeInOut(u / 1.4);
+          else if (u < 1.8) rise = 1;
+          else if (u < 2.4) rise = 1 - (1 - Math.pow(1 - (u - 1.8) / 0.6, 3));
+          else rise = 0;
+          const droop = smoothstep(1.8, 2.4, u) * (1 - smoothstep(3.6, 4.5, u));
+          out.front = armGoal('front', { ...POCKET, up: 12 + rise * 5 - droop * 3 });
+          out.back = armGoal('back', { ...POCKET, up: 12 + rise * 5 - droop * 3 });
+          out.shoulderLift = rise * 8 - droop * 4;
+          out.headNod = -0.12 * rise + 0.15 * droop;
+          out.lean = -0.03 * rise + 0.08 * droop;
+          out.breathOverride = rise * 2.2 - droop * 0.6;
+          out.sighCycle = Math.floor((t - 1.8) / 4.5);
+          break;
+        }
+        case 'check_phone_dark': {
+          const scroll = Math.max(0, Math.sin(t * 1.3)) * 2;
+          out.front = armGoal('front', { o: 8, z: 46, up: 92 + scroll, eo: 30, ez: -4, eu: 54, hand: 'holding_prop', handRel: -0.55 });
+          out.back = armGoal('back', { ...POCKET });
+          out.headNod = 0.22;
+          out.lean = 0.06;
+          out.phoneLight = 1;
+          out.prop = 'phone';
+          out.propArm = 'front';
+          out.customProp = true;
+          out.breathRate = 1.8;
+          break;
+        }
+        case 'sit_curb_hug_knees': {
+          // Sitting on the ground / curb, knees pulled up, arms wrapped around the shins, head hanging
+          const slow = Math.sin(t * 1.3);
+          out.sit = { pelvis: { x: -4, y: -18 }, ankles: { front: { x: 50, y: -10 }, back: { x: 42, y: -10 } }, kneeHint: { x: 30, y: -140 }, stool: false };
+          out.front = armGoal('front', { o: 46, z: 10, up: 60, eo: 40, ez: 10, eu: 40, hand: 'fist', handRel: 0.6 });
+          out.back = armGoal('back', { o: 46, z: 10, up: 60, eo: 40, ez: 10, eu: 40, hand: 'fist', handRel: 0.6 });
+          out.front.anchor = 'knee';
+          out.front.anchorOff = { x: 16, y: 22 };
+          out.back.anchor = 'knee';
+          out.back.anchorOff = { x: 12, y: 18 };
+          out.lean = 0.4 + slow * 0.012;
+          out.headNod = 0.38;
+          out.headTilt = 0.08;
+          out.minTurn = 0.72;
+          out.legsFront = true;
+          out.breathRate = 1.3;
+          out.breathDepth = 1.6;
+          out.noProp = true;
+          break;
+        }
+        case 'look_back_horizon': {
+          const sway = Math.sin(t * 0.35);
+          out.front = armGoal('front', { o: 46, z: 2, up: -14, eo: 52, ez: -8, eu: 34, hand: 'relaxed', handRel: 0.1 });
+          out.back = armGoal('back', { o: 46, z: 2, up: -14, eo: 52, ez: -8, eu: 34, hand: 'relaxed', handRel: 0.1 });
+          out.headNod = -0.1;
+          out.headTilt = sway * 0.03;
+          out.lean = -0.02 + sway * 0.015;
+          out.wind = 0.6;
+          out.breathRate = 1.6;
+          out.breathDepth = 1.3;
+          out.walkArms = 'swing';
+          break;
+        }
+        case 'pull_hood_up': {
+          // Timeline-driven action (deterministic in export): hands reach behind the head, pull the hood up
+          // and over, then return to the pocket.
+          const a = sceneT;
+          const BEHIND = { o: 24, z: -18, up: 146, eo: 66, ez: -14, eu: 118, hand: 'fist', handRel: 0.4 };
+          const OVER = { o: 28, z: 8, up: 176, eo: 66, ez: -6, eu: 140, hand: 'fist', handRel: 0.2 };
+          let spec;
+          if (a < 0.35) spec = POCKET;
+          else if (a < 1.05) spec = lerpSpec(POCKET, BEHIND, easeInOut((a - 0.35) / 0.7));
+          else if (a < 1.5) spec = lerpSpec(BEHIND, OVER, easeInOut((a - 1.05) / 0.45));
+          else if (a < 2.3) spec = lerpSpec(OVER, POCKET, easeInOut((a - 1.5) / 0.8));
+          else spec = POCKET;
+          out.front = armGoal('front', spec);
+          out.back = armGoal('back', { ...spec, frontLayer: true });
+          out.hood = smoothstep(1.05, 1.5, a);
+          out.headNod = a > 0.8 && a < 1.7 ? 0.12 : 0.04;
+          out.usesFront = true;
+          out.noProp = true;
           out.bothHands = true;
           break;
         }
@@ -248,7 +370,9 @@
 
       // Prop handling: hold it in the free hand (front unless the gesture needs the front hand).
       const prop = opts.prop || 'none';
-      if (prop !== 'none' && PROP_HOLD[prop] && id !== 'typing') {
+      if (out.customProp) return out;
+      out.prop = prop;
+      if (prop !== 'none' && PROP_HOLD[prop] && id !== 'typing' && !out.noProp) {
         const holdArm = out.usesFront ? 'back' : 'front';
         const spec = { ...PROP_HOLD[prop], hand: 'holding_prop' };
         spec.up += Math.sin(t * 2.4) * 1.2;

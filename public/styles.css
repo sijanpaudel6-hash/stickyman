@@ -878,3 +878,88 @@ input[type="color"] {
 .fx-marker.card { background: rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.7); cursor: default; }
 .fx-marker.transition { background: rgba(167, 139, 250, 0.3); border-color: rgba(167, 139, 250, 0.7); cursor: default; }
 .fx-marker:hover { filter: brightness(1.3); }
+
+/* ======================= v3: Silent Film Engine UI ======================= */
+.mode-toggle {
+  display: flex;
+  background: #0d1017;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  margin-left: 6px;
+}
+
+.mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mode-btn.active { background: var(--accent); color: #fff; }
+body.silent-mode .mode-btn.active { background: linear-gradient(90deg, #b45309, #f59e0b); }
+
+.topbar-select {
+  width: auto;
+  max-width: 210px;
+  padding: 6px 8px;
+}
+
+.silent-box {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.1), rgba(15, 19, 28, 0.9));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 11.5px;
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#silentGroup {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.light-swatches {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 10.5px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.light-swatches span.sw {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.25);
+  display: inline-block;
+}
+
+.canvas-wrapper.vertical {
+  aspect-ratio: 9 / 16;
+  width: auto;
+  height: 100%;
+  max-width: none;
+}
+
+/* Compact topbar so v3 controls fit on one row */
+.topbar { gap: 10px; }
+.topbar .btn, .mode-btn { white-space: nowrap; }
+.topbar-actions { gap: 6px; flex-wrap: nowrap; }
+.topbar-actions .btn { padding: 6px 10px; font-size: 12px; }
+.topbar-select { max-width: 175px; font-size: 11.5px; }
+.brand { white-space: nowrap; }
+@media (max-width: 1750px) {
+  .brand > .badge { display: none; }
+}
+@media (max-width: 1550px) {
+  .brand > span:not(.badge) { display: none; }
+  .topbar-select { max-width: 140px; }
+}

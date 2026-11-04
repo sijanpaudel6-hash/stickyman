@@ -4,6 +4,7 @@
 
   window.CAPTION_MODES = [
     { id: 'pop', name: 'Pop-In Words (viral)' },
+    { id: 'cinematic', name: 'Cinematic Title (silent film)' },
     { id: 'karaoke', name: 'Karaoke Highlight Line' },
     { id: 'classic', name: 'Classic Subtitle Box' },
     { id: 'off', name: 'Captions Off' },
@@ -47,14 +48,17 @@
     }
 
     anchorY(H, position) {
-      if (position === 'top') return H * 0.15;
+      const vertical = this.vertical;
+      if (position === 'top') return H * (vertical ? 0.17 : 0.15);
       if (position === 'middle') return H * 0.5;
-      return H * 0.83;
+      return H * (vertical ? 0.72 : 0.83);   // vertical: stay above the Shorts/Reels UI
     }
 
     render(ctx, W, H, scene, time, style) {
       const st = { ...window.defaultCaptionStyle(), ...(style || {}) };
       if (!scene || !scene.subtitle || !scene.subtitle.trim() || st.mode === 'off') return;
+      this.vertical = H > W;
+      if (st.mode === 'cinematic') return this.renderCinematic(ctx, W, H, scene, time, st);
       if (st.mode === 'classic') return this.renderClassic(ctx, W, H, scene.subtitle.trim(), st);
       const words = this.timings(scene);
       if (!words.length) return;
@@ -160,6 +164,41 @@
           this.drawWord(ctx, label(w), cx, baseY + li * lineH, size, spoken ? st.highlight : '#ffffff', scale, spoken ? 1 : 0.82);
         });
       });
+    }
+
+    // Elegant silent-film title: thin serif, letter-spaced, slow fade in/out, soft warm glow
+    renderCinematic(ctx, W, H, scene, time, st) {
+      const text = scene.subtitle.trim();
+      const local = time - scene.start;
+      const remain = scene.end - time;
+      const a = Math.min(1, Math.max(0, (local - 0.35) / 1.1)) * Math.min(1, Math.max(0, remain / 0.8));
+      if (a <= 0.001) return;
+      const size = Math.round((st.size || 54) * (this.vertical ? 0.62 : 0.58));
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.font = `italic 400 ${size}px Georgia, "Times New Roman", serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(size * 0.08)}px`;
+      const maxW = W * 0.8;
+      const words = text.split(/\s+/);
+      const lines = [];
+      let line = '';
+      words.forEach((w) => {
+        const test = line ? `${line} ${w}` : w;
+        if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test;
+      });
+      if (line) lines.push(line);
+      const lh = size * 1.35;
+      const y0 = this.anchorY(H, st.position) - ((lines.length - 1) * lh) / 2 + (1 - a) * 6;
+      ctx.shadowColor = 'rgba(0,0,0,0.85)';
+      ctx.shadowBlur = size * 0.5;
+      ctx.fillStyle = '#f6f1e4';
+      lines.forEach((l, i) => ctx.fillText(l, W / 2, y0 + i * lh));
+      ctx.shadowColor = 'rgba(255, 236, 190, 0.35)';
+      ctx.shadowBlur = size * 0.3;
+      lines.forEach((l, i) => ctx.fillText(l, W / 2, y0 + i * lh));
+      ctx.restore();
     }
 
     renderClassic(ctx, W, H, text, st) {

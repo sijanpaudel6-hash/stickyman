@@ -17,6 +17,49 @@ A local, browser-based YouTube Animation & Lip-Sync Studio built for the **Stick
 - **1-Click MP4 Video Export**:
   - Renders 60fps video + audio and encodes a YouTube-ready `.mp4` (`H.264 + AAC`) via local `ffmpeg`.
 
+## v3 — Silent Emotional Short Film & Cinematic Photo Engine
+
+Made for no-narration films (music and ambience only) about loneliness, social anxiety, emptiness, burnout and quiet discipline, built from **Google Flow** photos and the rigged Sticky character.
+
+### 1. Silent Film / Music-Only Mode
+- Topbar toggle: **🎙️ Voiceover** (lip-sync, as before) or **🎬 Silent Film**. In Silent Film mode the music **never** moves the mouth.
+- The music drives `audioState.musicEnergy` (low-frequency energy) and `audioState.beatPulse`. These make the dust motes glow and swell, deepen the breathing, and add a small head-nod on beats while walking or "listening".
+- The track is analysed when it loads: **beat markers and BPM** show on the waveform, and **S** snaps a split to the nearest beat (toggle in the left panel). Without an uploaded track, a procedural 72 BPM piano demo plays.
+- Per-scene **silent mouth**: Closed, Slow Heavy Sigh, or Quivering Lip.
+
+### 2. Silent acting presets & hood
+- `Lonely Slouch` (hunched spine, dropped shoulders, head hanging, very slow breathing), `Heavy Sigh` (4.5 s inhale / hold / exhale cycle that also triggers a breath foley), `Phone in Dark` (blue-white light cone, glow on the face and upper hoodie, rim on the head), `Hug Knees` (sitting on the ground, arms around the shins), `Gaze at Horizon` (best in 3/4 or back view, with wind), `Pull Hood Up` (hands reach behind the head and pull the hood over).
+- **🧥 Hood up** can be toggled per scene on every view (front, 3/4, side and back). There is also a per-scene **Wind** slider for the hem, drawstrings and hood.
+
+### 3. Google Flow photo integration
+- **🖼️ Upload Photos** accepts multiple files. **✨ Auto-Build Scenes from Photos** spreads them across the music length, cuts on beats, and cycles through silent-acting shots, Ken Burns moves and dissolves.
+- **Light Match**: each photo is sampled for sky colour, ground colour, key-light colour and key-light direction. The character then gets an *ambient tint*, an *exposure/contrast match* and a *rim light* on the edge facing the light (cool moonlight from a blue bedroom, warm amber from a sunset). The glowing eyes are drawn again after grading so they stay bright. **Auto** picks values from the photo.
+- **Ken Burns 2.5D**: Slow Push In, Slow Pull Out, Drift Left, Drift Right, Breathing Float. The photo moves fully, the character 30%, and the foreground more (parallax).
+- **Foreground depth**: out-of-focus bokeh, passing rain streaks, or windowpane reflection. **2.35:1 cinema bars** come from the aspect switcher.
+
+### 4. Transitions
+Per scene (how it *enters*), 0–2 s: Cut, Cross-Dissolve (both shots rendered live and blended), Fade Through Black, Fade Through White. There is also an optional fade to black at the end of the film.
+
+### 5. Ambient soundscapes & foley (`public/fx/ambient.js`, `sfx.js`)
+- Procedural beds per scene with per-scene and master volume: rain on window (with distant thunder), night wind, vinyl crackle, 60 BPM clock ticking, heartbeat, muffled crowd. Beds crossfade between scenes and can be previewed while paused.
+- Foley: Wet Footstep (also triggered automatically on each heel strike), Heavy Sigh, Phone Vibrate, Door Close Echo.
+- Music, SFX, foley and ambience all go through one bus into the MP4 export.
+
+### 6. Aspect ratio & templates
+- **16:9** (1280×720), **16:9 + 2.35:1 bars**, or **9:16 Shorts/Reels/TikTok** (720×1280). In 9:16 the character framing is scaled, cards move above the character and captions sit above the app UI.
+- **🎞️ Silent Film Templates**: *3 AM Loneliness*, *Social Anxiety (Invisible in the Crowd)*, *Emptiness / Burnout*, *Quiet Discipline (Nobody Watching)*. Each sets acting, ambience, transitions, Ken Burns, foreground and cinematic serif captions. They stretch to your music, cut on beats, and use your uploaded photos when they're available.
+- **💾 Save** stores uploaded photo backgrounds (images) inside the project file.
+
+### v3 file map
+```
+public/fx/musicAnalysis.js  beat/onset detection, BPM, demo piano track, silent mouth states
+public/fx/lightMatch.js     ambient tint, exposure match, directional rim light
+public/fx/cinematic.js      Ken Burns, foreground overlays, letterbox, transition timing
+public/fx/ambient.js        procedural ambient soundscape beds
+public/templates.js         silent film templates + shared scene factory + beat-snapped layout
+public/studioV3.js          v3 UI (mode, aspect, templates, auto-build, cinematic inspector)
+```
+
 ## v2 — Articulated Body Rig + Viral YouTube Engine
 
 Pick **🦴 Rigged Body (v2)** in *Character Pose / Shot* (all demo scenes already use it).
