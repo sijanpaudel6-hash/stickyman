@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sticky-studio": {
+      "command": "node",
+      "args": ["mcp-server.js"]
+    }
+  }
+}

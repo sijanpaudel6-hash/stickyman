@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sticky Character Studio — Local YouTube Animator</title>
+  <title>Sticky Character Studio v3 — Silent Film Engine</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -15,23 +15,40 @@
         <div class="brand-eyes"><span></span><span></span></div>
       </div>
       <span>Sticky Character Studio</span>
-      <span class="badge">Local YouTube Engine</span>
+      <span class="badge">v3 · Silent Film Engine</span>
+      <div class="mode-toggle" title="Voiceover = mouth lip-syncs to the track. Silent Film = music drives mood, never the mouth.">
+        <button class="mode-btn active" data-film-mode="voiceover">🎙️ Voiceover</button>
+        <button class="mode-btn" data-film-mode="silent">🎬 Silent Film</button>
+      </div>
     </div>
 
     <div class="topbar-actions">
+      <select id="aspectSelect" class="topbar-select" title="Canvas aspect ratio">
+        <option value="16:9">16:9 YouTube (1280×720)</option>
+        <option value="16:9_cinema">16:9 + 2.35:1 Cinema Bars</option>
+        <option value="9:16">9:16 Shorts / Reels / TikTok (720×1280)</option>
+      </select>
+      <select id="templateSelect" class="topbar-select" title="Load a ready-made silent film storyboard">
+        <option value="">🎞️ Silent Film Templates…</option>
+      </select>
+
       <input type="file" id="audioFileInput" accept="audio/*" style="display:none" />
-      <button class="btn btn-primary" id="btnUploadAudio" title="Upload your MP3/WAV voiceover">
-        🎵 Upload Voiceover (MP3/WAV)
+      <button class="btn btn-primary" id="btnUploadAudio" title="Upload your MP3/WAV voiceover or music track">
+        🎵 Upload Audio
       </button>
 
-      <input type="file" id="bgFileInput" accept="image/*,video/*" style="display:none" />
-      <button class="btn" id="btnUploadBg" title="Upload custom background image or video">
-        🖼️ Upload Background
+      <input type="file" id="bgFileInput" accept="image/*,video/*" multiple style="display:none" />
+      <button class="btn" id="btnUploadBg" title="Upload one or many background photos / videos (e.g. Google Flow shots)">
+        🖼️ Upload Photos
       </button>
 
       <button class="btn" id="btnMicToggle" title="Use live microphone for testing or live recording">
         🎙️ Live Mic: OFF
       </button>
+
+      <input type="file" id="projectFileInput" accept=".json,application/json" style="display:none" />
+      <button class="btn" id="btnSaveProject" title="Save scenes, rig poses, FX & cards to a .json project file">💾 Save</button>
+      <button class="btn" id="btnLoadProject" title="Load a .json project file">📂 Load</button>
 
       <button class="btn btn-success" id="btnExportMp4" title="Render & Export 1080p MP4 Video via FFmpeg">
         🎬 Export Video (MP4)
@@ -53,11 +70,21 @@
       </div>
       <div class="panel-body">
         <div style="background:#0f131c;border:1px solid var(--border);border-radius:8px;padding:9px 10px;font-size:11.5px;color:#cbd5e1;line-height:1.45">
-          <div style="font-weight:700;color:#fff;margin-bottom:3px">🔊 Active Voiceover Track:</div>
+          <div style="font-weight:700;color:#fff;margin-bottom:3px">🔊 Active Audio Track:</div>
           <div id="audioFileLabel" style="color:#a5b4fc;word-break:break-all">Built-in Demo Voiceover (16.0s)</div>
           <div style="margin-top:6px;color:var(--text-muted);font-size:11px">
             Tip: Press <b>Space</b> to play, press <b>S</b> to split a scene at the playhead, or press <b>1–9 / 0</b> to switch emotions.
           </div>
+        </div>
+
+        <div class="silent-box">
+          <div style="font-weight:700;color:#fff;margin-bottom:4px">🎬 Silent Film Builder</div>
+          <div id="beatInfoLabel" class="mini-hint">Switch to Silent Film mode to see beat markers.</div>
+          <div id="photoInfoLabel" class="mini-hint" style="margin:4px 0 6px">No photos uploaded yet.</div>
+          <button class="btn btn-sm btn-primary" id="btnAutoBuild" title="Distribute every uploaded photo across the music length, cutting on beats">✨ Auto-Build Scenes from Photos</button>
+          <label class="check-row"><input type="checkbox" id="snapBeatsCheck" checked /><span>Snap cuts (S) to the nearest beat</span></label>
+          <label class="check-row"><input type="checkbox" id="filmFadeCheck" /><span>Fade to black at the end of the film</span></label>
+          <label class="check-row"><input type="checkbox" id="templatePhotosCheck" checked /><span>Templates use my uploaded photos</span></label>
         </div>
 
         <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#cbd5e1;cursor:pointer">
@@ -79,7 +106,7 @@
               <span id="hudSceneName">Scene 1 • NEUTRAL (front)</span>
             </div>
             <div class="hud-pill">
-              <span>Voice Lip-Sync</span>
+              <span id="hudMeterLabel">Voice Lip-Sync</span>
               <div class="mic-meter"><div class="mic-meter-fill" id="micMeterFill"></div></div>
             </div>
           </div>
@@ -131,7 +158,8 @@
             <span>Character Pose / Shot</span>
           </div>
           <div class="pose-grid">
-            <button class="pose-btn active" data-pose="front">Full Front</button>
+            <button class="pose-btn pose-btn-rig" data-pose="rig" title="Fully articulated skeletal rig: IK hands/feet, gestures, walk/run, props">🦴 Rigged Body (v2) — IK, Gestures, Walk/Run</button>
+            <button class="pose-btn" data-pose="front">Full Front</button>
             <button class="pose-btn" data-pose="bust">Close Bust</button>
             <button class="pose-btn" data-pose="side">Side View</button>
             <button class="pose-btn" data-pose="back">Back Hood</button>
@@ -185,7 +213,7 @@
 
           <div class="control-row">
             <label style="width:85px">Size / Scale</label>
-            <input type="range" id="charScaleSlider" min="0.4" max="1.8" step="0.05" value="1.0" />
+            <input type="range" id="charScaleSlider" min="0.4" max="3.0" step="0.05" value="1.0" />
             <span id="charScaleVal" style="width:38px;text-align:right;font-size:11.5px">100%</span>
           </div>
 
@@ -196,6 +224,242 @@
             </label>
           </div>
         </div>
+
+        <!-- ===================== v3: SILENT FILM & CINEMATIC ===================== -->
+        <details class="insp-group" id="silentGroup" open>
+          <summary>🎬 Silent Film · Cinematic Shot</summary>
+
+          <div class="section-label"><span>Transition Into This Scene</span></div>
+          <div class="control-row">
+            <select id="transitionTypeSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Duration</label>
+            <input type="range" id="transitionDurSlider" min="0" max="2" step="0.1" value="1" />
+            <span class="val" id="transitionDurVal">1.0s</span>
+          </div>
+
+          <div class="section-label" style="margin-top:8px"><span>Photo Camera (Ken Burns 2.5D)</span></div>
+          <div class="control-row">
+            <select id="kenBurnsSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Foreground</label>
+            <select id="foregroundSelect"></select>
+          </div>
+
+          <div class="section-label" style="margin-top:8px"><span>Light Match to Photo</span><button class="btn btn-sm" id="btnLightAuto" title="Recommended values for photo backgrounds">Auto</button></div>
+          <div class="control-row">
+            <label style="width:72px">Ambient tint</label>
+            <input type="range" id="lightTintSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="lightTintVal">0%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Rim light</label>
+            <input type="range" id="lightRimSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="lightRimVal">0%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Exposure</label>
+            <input type="range" id="lightExpSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="lightExpVal">0%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Rim side</label>
+            <select id="lightSideSelect">
+              <option value="auto">Auto (from photo)</option>
+              <option value="left">Light from left</option>
+              <option value="right">Light from right</option>
+              <option value="back">Backlit (both edges)</option>
+            </select>
+          </div>
+          <div id="lightSwatches" class="light-swatches"></div>
+
+          <div class="section-label" style="margin-top:8px"><span>Silent Acting</span></div>
+          <div class="control-row">
+            <label style="width:72px">Mouth</label>
+            <select id="silentMouthSelect"></select>
+          </div>
+          <label class="check-row"><input type="checkbox" id="hoodUpCheck" /><span>🧥 Hood up (all views)</span></label>
+          <div class="control-row" style="margin-top:4px">
+            <label style="width:72px">Wind</label>
+            <input type="range" id="windSlider" min="0" max="100" step="1" value="0" />
+            <span class="val" id="windVal">0%</span>
+          </div>
+          <label class="check-row"><input type="checkbox" id="foleyCheck" /><span>Auto foley (footsteps, sighs)</span></label>
+
+          <div class="section-label" style="margin-top:8px"><span>Ambient Soundscape</span></div>
+          <div class="control-row">
+            <select id="ambientSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Scene vol</label>
+            <input type="range" id="ambientVolSlider" min="0" max="100" step="1" value="60" />
+            <span class="val" id="ambientVolVal">60%</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Master</label>
+            <input type="range" id="ambientMasterSlider" min="0" max="100" step="1" value="80" />
+            <span class="val" id="ambientMasterVal">80%</span>
+          </div>
+          <label class="check-row"><input type="checkbox" id="ambientPreviewCheck" /><span>🔊 Preview ambience while paused</span></label>
+          <div class="control-row" style="margin-top:4px">
+            <label style="width:72px">Music → mood</label>
+            <input type="range" id="musicReactSlider" min="0" max="200" step="5" value="100" />
+            <span class="val" id="musicReactVal">100%</span>
+          </div>
+        </details>
+
+        <!-- ===================== v2: BODY RIG ===================== -->
+        <details class="insp-group" id="rigGroup" open>
+          <summary>🦴 Body Rig · Limbs & Locomotion</summary>
+          <div class="rig-disabled-hint" id="rigDisabledHint">
+            This scene uses a flat sprite pose. <button class="btn btn-sm btn-primary" id="btnSwitchToRig">Switch scene to 🦴 Rigged Body</button>
+          </div>
+          <div id="rigControls">
+            <div class="section-label"><span>Camera View / Head Turn</span></div>
+            <div class="chip-row" id="rigViewRow"></div>
+
+            <div class="section-label" style="margin-top:10px"><span>Action & Gesture Preset</span><span class="kbd-hint">G = gizmos</span></div>
+            <div class="gesture-grid" id="gestureGrid"></div>
+
+            <div class="control-row" style="margin-top:8px">
+              <label style="width:92px">Right hand</label>
+              <select id="handFrontSelect"></select>
+            </div>
+            <div class="control-row">
+              <label style="width:92px">Left hand</label>
+              <select id="handBackSelect"></select>
+            </div>
+
+            <div class="section-label" style="margin-top:8px"><span>Hand Prop</span></div>
+            <div class="prop-grid" id="propGrid"></div>
+
+            <div class="section-label" style="margin-top:10px"><span>Manual Pose (FK sliders)</span><button class="btn btn-sm" id="btnResetPose">Reset</button></div>
+            <div class="control-row">
+              <label style="width:92px">Spine lean</label>
+              <input type="range" id="rigLeanSlider" min="-25" max="25" step="1" value="0" />
+              <span class="val" id="rigLeanVal">0°</span>
+            </div>
+            <div class="control-row">
+              <label style="width:92px">Head tilt</label>
+              <input type="range" id="rigTiltSlider" min="-30" max="30" step="1" value="0" />
+              <span class="val" id="rigTiltVal">0°</span>
+            </div>
+            <div class="control-row">
+              <label style="width:92px">Head nod</label>
+              <input type="range" id="rigNodSlider" min="-25" max="25" step="1" value="0" />
+              <span class="val" id="rigNodVal">0°</span>
+            </div>
+
+            <div class="section-label" style="margin-top:8px"><span>Inverse Kinematics</span></div>
+            <label class="check-row">
+              <input type="checkbox" id="ikGizmoCheck" checked />
+              <span>Show IK gizmos — drag hands, feet & head on the canvas</span>
+            </label>
+            <div class="control-row" style="margin-top:4px">
+              <span id="ikPinsLabel" style="font-size:11.5px;color:var(--text-muted)">No IK pins on this scene</span>
+              <button class="btn btn-sm" id="btnClearIk">Clear IK Pins</button>
+            </div>
+            <div class="mini-hint">Double-click a pinned effector to release it. Shift-drag the body to move the whole character.</div>
+
+            <div class="section-label" style="margin-top:10px"><span>Walk / Run Locomotion</span><span class="speed-badge" id="speedBadge">IDLE</span></div>
+            <div class="control-row">
+              <label style="width:92px">Speed</label>
+              <input type="range" id="rigSpeedSlider" min="0" max="2.5" step="0.05" value="0" />
+              <span class="val" id="rigSpeedVal">0.00x</span>
+            </div>
+            <div class="chip-row">
+              <button class="chip" data-dir="left">◀ Left</button>
+              <button class="chip" data-dir="right">Right ▶</button>
+              <select id="rigTravelSelect" style="flex:1">
+                <option value="in_place">Walk in Place</option>
+                <option value="translate">Translate Across Screen</option>
+              </select>
+            </div>
+            <div class="chip-row" style="margin-top:6px">
+              <button class="btn btn-sm" id="btnJump" title="Shortcut: J">🦘 Jump (J)</button>
+              <label class="check-row" style="flex:1;justify-content:flex-end">
+                <input type="checkbox" id="clothCheck" checked />
+                <span>Drawstring & hood physics</span>
+              </label>
+            </div>
+          </div>
+        </details>
+
+        <!-- ===================== v2: VIRAL FX ===================== -->
+        <details class="insp-group" open>
+          <summary>🔥 Viral Retention FX</summary>
+
+          <div class="section-label"><span>Camera Punch (adds at playhead)</span><span class="kbd-hint">Z = snap zoom</span></div>
+          <div class="fx-grid" id="cameraFxGrid"></div>
+          <label class="check-row"><input type="checkbox" id="sceneDutchCheck" /><span>Dutch angle for whole scene</span></label>
+          <label class="check-row"><input type="checkbox" id="sceneSpotCheck" /><span>Spotlight dimming for whole scene</span></label>
+
+          <div class="section-label" style="margin-top:10px"><span>Sound Effects (adds at playhead)</span><span class="kbd-hint">B = boom</span></div>
+          <div class="fx-grid" id="sfxGrid"></div>
+          <label class="check-row"><input type="checkbox" id="sfxPreviewOnly" /><span>Preview only (don't add to timeline)</span></label>
+          <div class="control-row" style="margin-top:4px">
+            <label style="width:110px">Scene transition</label>
+            <select id="sceneTransitionSfx"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:110px">SFX volume</label>
+            <input type="range" id="sfxVolumeSlider" min="0" max="1.5" step="0.05" value="0.9" />
+          </div>
+
+          <div class="section-label" style="margin-top:10px"><span>B-Roll / PiP Media Cards</span></div>
+          <div class="control-row">
+            <select id="cardKindSelect"></select>
+            <select id="cardSideSelect" style="width:96px">
+              <option value="auto">Auto side</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <input type="text" id="cardTextInput" placeholder="Card text (meme: TOP | BOTTOM)" />
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Appear at</label>
+            <input type="number" id="cardAppearInput" min="0" step="0.1" value="0.4" style="width:70px" />
+            <label style="width:36px">Hold</label>
+            <input type="number" id="cardHoldInput" min="0" step="0.1" value="0" style="width:70px" title="0 = until scene ends" />
+          </div>
+          <input type="file" id="cardImageInput" accept="image/*" style="display:none" />
+          <div class="chip-row">
+            <button class="btn btn-sm" id="btnCardImage">🖼️ Choose Image</button>
+            <span id="cardImageLabel" class="mini-hint" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No image</span>
+            <button class="btn btn-sm btn-primary" id="btnAddCard">+ Add Card</button>
+          </div>
+          <div id="cardList" class="card-list"></div>
+
+          <div class="section-label" style="margin-top:10px"><span>Animated Captions</span></div>
+          <div class="control-row">
+            <select id="captionModeSelect"></select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Highlight</label>
+            <input type="color" id="captionColorInput" value="#fde047" />
+            <select id="captionPosSelect" style="flex:1">
+              <option value="bottom">Bottom</option>
+              <option value="middle">Middle</option>
+              <option value="top">Top</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Words</label>
+            <input type="range" id="captionChunkSlider" min="1" max="6" step="1" value="3" />
+            <span class="val" id="captionChunkVal">3</span>
+          </div>
+          <div class="control-row">
+            <label style="width:72px">Size</label>
+            <input type="range" id="captionSizeSlider" min="30" max="80" step="2" value="54" />
+            <span class="val" id="captionSizeVal">54</span>
+          </div>
+          <label class="check-row"><input type="checkbox" id="captionUpperCheck" checked /><span>UPPERCASE</span></label>
+          <label class="check-row"><input type="checkbox" id="captionBounceCheck" checked /><span>Bounce active word</span></label>
+        </details>
 
         <!-- Scene Title & Subtitle / Caption -->
         <div>
@@ -217,12 +481,13 @@
     <div class="timeline-toolbar">
       <div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:11.5px;color:var(--text-muted)">
         <span>⏱️ VOICEOVER WAVEFORM & SCENE TIMELINE</span>
-        <span style="font-weight:400;color:#64748b">(Click waveform to scrub • Drag scene edges to resize • Drag character on canvas to move)</span>
+        <span style="font-weight:400;color:#64748b">(Click waveform to scrub • Drag scene edges to resize • Drag FX markers to retime • Drag IK handles or character on canvas)</span>
       </div>
     </div>
 
     <div class="timeline-tracks">
       <canvas id="waveformCanvas"></canvas>
+      <div class="fx-track" id="fxTrack" title="FX & SFX markers — drag to retime, right-click / double-click to delete"></div>
       <div class="scenes-track" id="scenesTrack"></div>
       <div class="playhead-line" id="playheadLine" style="left:0%">
         <div class="playhead-cap"></div>
@@ -245,6 +510,25 @@
   <script src="assets_bundle.js"></script>
   <script src="backgrounds.js"></script>
   <script src="characterRenderer.js"></script>
+  <script src="rig/rigCore.js"></script>
+  <script src="rig/gestures.js"></script>
+  <script src="rig/locomotion.js"></script>
+  <script src="rig/clothPhysics.js"></script>
+  <script src="rig/props.js"></script>
+  <script src="rig/rigCharacter.js"></script>
+  <script src="fx/cameraFx.js"></script>
+  <script src="fx/captions.js"></script>
+  <script src="fx/sfx.js"></script>
+  <script src="fx/mediaCards.js"></script>
+  <script src="fx/musicAnalysis.js"></script>
+  <script src="fx/lightMatch.js"></script>
+  <script src="fx/cinematic.js"></script>
+  <script src="fx/ambient.js"></script>
+  <script src="templates.js"></script>
+  <script src="projectSchema.js"></script>
   <script src="app.js"></script>
+  <script src="studioV2.js"></script>
+  <script src="studioV3.js"></script>
+  <script src="remoteBridge.js"></script>
 </body>
 </html>

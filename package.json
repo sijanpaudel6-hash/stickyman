@@ -1,9 +1,19 @@
 {
   "name": "sticky-character-studio",
-  "version": "1.0.0",
-  "description": "Local YouTube Animation & Lip-Sync Studio for Sticky Hoodie Character",
+  "version": "4.0.0",
+  "description": "Local YouTube animation, lip-sync & silent film studio for the Sticky Hoodie Character — AI-agent controllable via MCP + CLI",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "mcp": "node mcp-server.js",
+    "cli": "node cli.js",
+    "check": "for f in server.js mcp-server.js cli.js lib/*.js public/*.js public/rig/*.js public/fx/*.js; do node --check $f || exit 1; done"
+  },
+  "bin": {
+    "sticky-studio": "cli.js",
+    "sticky-studio-mcp": "mcp-server.js"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
